@@ -1,0 +1,7 @@
+[submodule "external/2k39-bioemu-200-samples"]
+	path = external/2k39-bioemu-200-samples
+	url = https://github.com/viveksoorya/2k39-bioemu-200-samples
+[submodule "external/asvs"]
+	path = external/asvs
+	url = https://github.com/chiranjibsur/asvs
+	branch = muskan-capstone
