@@ -1,47 +1,66 @@
-import os, sys, tempfile, pandas as pd
+# app/app.py
+import os
+import tempfile
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
 
-# Project root (one level above app/)
+import pandas as pd
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+
+# ----- project paths -----
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 STATIC = ROOT / "static"
+TEMPLATES = ROOT / "templates"
 
-# Make sure Python can import analysis/
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Flask app
+app = Flask(__name__)
+CORS(app)  # allow calls from your frontend / trame
+
+# ---------- pages ----------
+@app.get("/")
+def home():
+    """Serve the main HTML page."""
+    return send_from_directory(str(TEMPLATES), "index.html")
+
+@app.get("/rama")
+def rama_html():
+    """Serve the latest Ramachandran plot, if present."""
+    rama = STATIC / "rama_view.html"
+    if not rama.exists():
+        return "Ramachandran plot not generated yet. Upload a PDB or run analysis.", 404
+    return send_from_directory(str(STATIC), "rama_view.html")
+
+# (optional) static passthrough, if you link to other files
+@app.get("/static/<path:p>")
+def static_files(p: str):
+    return send_from_directory(str(STATIC), p)
+
+# ---------- API ----------
+@app.get("/api/health")
+def health():
+    return jsonify({"ok": True})
+
+@app.get("/api/top_anomalies")
+def api_top_anomalies():
+    """Return top anomalies from the rollup CSV."""
+    csv_path = DATA / "rollup.csv"
+    if not csv_path.exists():
+        return jsonify({"error": "rollup.csv not found — upload a PDB or run analysis first"}), 404
+    df = pd.read_csv(csv_path)
+    top = df.sort_values("mean_if", ascending=False).head(50).to_dict(orient="records")
+    return jsonify(top)
 
 # analysis helpers
 from analysis.angles import compute_phi_psi
 from analysis.anomaly import score_if
 from analysis.aggregate import rollup
 
-# Tell Flask where the real static folder is
-app = Flask(
-    __name__,
-    static_url_path="/static",
-    static_folder=str(STATIC),
-)
-
-@app.get("/")
-def health():
-    return "Ensemble Anomaly Maps API is running. Try /api/top_anomalies"
-
-@app.get("/api/top_anomalies")
-def top_anomalies():
-    df = pd.read_csv(DATA / "rollup.csv")
-    return jsonify(df.sort_values("mean_if", ascending=False).head(10).to_dict(orient="records"))
-
-# (Optional explicit static route—kept for clarity)
-@app.get("/static/<path:p>")
-def static_files(p):
-    return send_from_directory(STATIC, p)
-
 @app.post("/api/score_pdb")
 def score_pdb():
     """
-    Upload a .pdb (form field name 'file'), run φ/ψ -> IsolationForest,
-    write outputs into ROOT/data and ROOT/static, and return top residues.
+    Upload a .pdb, compute φ/ψ, score residues (IsolationForest),
+    roll up per-residue, regenerate the Ramachandran HTML, and return top10.
     """
     if "file" not in request.files or request.files["file"].filename == "":
         return jsonify({"error": "Upload a .pdb file with form field name 'file'"}), 400
@@ -50,46 +69,66 @@ def score_pdb():
     if not f.filename.lower().endswith(".pdb"):
         return jsonify({"error": "Not a .pdb file"}), 400
 
+    # ensure folders
     DATA.mkdir(parents=True, exist_ok=True)
     STATIC.mkdir(parents=True, exist_ok=True)
 
-    # save upload into data/tmp
-    tmpdir = DATA / "tmp"; tmpdir.mkdir(exist_ok=True, parents=True)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdb", dir=tmpdir) as tf:
-        f.save(tf.name)
+    # save upload to a temp file under data/
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdb", dir=DATA) as tf:
         pdb_path = tf.name
+        f.save(pdb_path)
 
-    # run pipeline
-    angles_path = DATA / "angles.parquet"
-    scored_path = DATA / "angles_scored.parquet"
-    rollup_path = DATA / "rollup.csv"
-    html_path = STATIC / "rama_view.html"
+    angles_parquet = DATA / "angles.parquet"
+    angles_scored  = DATA / "angles_scored.parquet"
+    rollup_csv     = DATA / "rollup.csv"
+    rama_html      = STATIC / "rama_view.html"
 
-    a = compute_phi_psi(pdb_path, str(angles_path))
-    s = score_if(str(angles_path), str(scored_path), contamination=0.05)
-    r = rollup(str(scored_path), str(rollup_path))
+    # --- compute phi/psi ---
+    # compute_phi_psi may return a DataFrame OR a path to a parquet/table.
+    result = compute_phi_psi(pdb_path)
+    if isinstance(result, (str, Path)):
+        # helper already wrote parquet/table and returned a path
+        angles_parquet = Path(result)
+    else:
+        # got a DataFrame — write it ourselves
+        result.to_parquet(angles_parquet)
 
-    # make plot
+    # --- anomaly scoring + rollup ---
+    score_if(angles_parquet, angles_scored, contamination=0.05)
+    rollup(angles_scored, rollup_csv)
+
+    # --- build Ramachandran HTML ---
     import plotly.express as px
-    df = pd.read_parquet(scored_path)
-    fig = px.scatter(df, x="phi", y="psi", color="if_score",
-                     range_x=[-180,180], range_y=[-180,180], height=700,
-                     title="Ramachandran (φ/ψ) — IsolationForest score")
-    fig.write_html(html_path, include_plotlyjs="cdn")
+    df_scored = pd.read_parquet(angles_scored)
+    fig = px.scatter(
+        df_scored,
+        x="phi", y="psi", color="if_score",
+        range_x=[-180, 180], range_y=[-180, 180],
+        height=700,
+        title="Ramachandran (φ/ψ) — IsolationForest anomaly score",
+    )
+    fig.update_layout(xaxis_title="phi (°)", yaxis_title="psi (°)")
+    fig.write_html(str(rama_html), include_plotlyjs="cdn")
 
-    # cleanup tmp
-    try: os.remove(pdb_path)
-    except: pass
+    # --- response payload ---
+    df_roll = pd.read_csv(rollup_csv)
+    top10 = (
+        df_roll.sort_values("mean_if", ascending=False)
+        .head(10)
+        .to_dict(orient="records")
+    )
 
     return jsonify({
         "ok": True,
-        "angles_parquet": str(angles_path),
-        "angles_scored_parquet": str(scored_path),
-        "rollup_csv": str(rollup_path),
-        "rama_html": f"/static/{html_path.name}",
-        "top10": pd.read_csv(rollup_path).sort_values("mean_if", ascending=False).head(10).to_dict(orient="records"),
+        "angles_parquet": str(angles_parquet),
+        "angles_scored_parquet": str(angles_scored),
+        "rollup_csv": str(rollup_csv),
+        "rama_html": "/rama",
+        "top10": top10,
     })
-    
+
+# ----- entrypoint -----
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5051))
+    # host=0.0.0.0 lets you open from another device on the LAN too
     app.run(host="0.0.0.0", port=port, debug=False)
