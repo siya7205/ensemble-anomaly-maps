@@ -1,0 +1,12 @@
+{
+  "timestamp": "20250822-142929",
+  "pdb_filename": "sample_10.pdb",
+  "run_dir": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929",
+  "artifacts": {
+    "angles_parquet": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929/angles.parquet",
+    "angles_scored_parquet": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929/angles_scored.parquet",
+    "rollup_csv": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929/rollup.csv",
+    "points_json": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929/points.json",
+    "rama_html": "/Users/siya/capstone/ensemble-clean/outputs/run-20250822-142929/rama_view.html"
+  }
+}
