@@ -40,7 +40,6 @@ def rama_html():
         return "Ramachandran plot not generated yet. Upload a PDB or run analysis.", 404
     return send_from_directory(STATIC, "rama_view.html")
 
-
 @app.get("/static/<path:p>")
 def static_files(p):
     """Pass-through for static assets (JS, CSS, HTML)."""
@@ -76,7 +75,37 @@ def api_top_anomalies():
     )
     return jsonify(top)
 
+# ---------------- Local-ops API ----------------
+import glob
 
+@app.get("/api/local_ops_top")
+def api_local_ops_top():
+    """
+    Return top residues from the latest analysis/run_local_ops.py output.
+    Looks for outputs/run-local-*/local_ops_summary.csv
+    """
+    paths = sorted(glob.glob(str(ROOT / "outputs" / "run-local-*" / "local_ops_summary.csv")))
+    if not paths:
+        return jsonify({"error": "No local_ops_summary.csv found. Run: python -m analysis.run_local_ops <pdb>"}), 404
+
+    csv_path = Path(paths[-1])
+    df = pd.read_csv(csv_path)
+
+    # Map columns -> concise names expected by the UI
+    if "local_score_med" not in df.columns:
+        return jsonify({"error": f"Unexpected columns in {csv_path.name}"}), 500
+
+    out = (
+        df.rename(columns={
+            "local_score_med": "score_med",
+            "rama_disallowed_pct": "pct_disallowed",
+            "n_frames": "frames",
+        })[["resid", "resname", "score_med", "pct_disallowed", "frames"]]
+          .sort_values("score_med", ascending=False)
+          .head(50)
+          .to_dict(orient="records")
+    )
+    return jsonify(out)
 @app.get("/api/points")
 def api_points():
     """

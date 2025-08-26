@@ -52,7 +52,15 @@
       <tbody></tbody>
     </table>
   </div>
-
+<h2>Local Ops (domain rules) – Top residues</h2>
+<button id="loadLocalOps">Load local-ops</button>
+<p id="localOpsPath"></p>
+<table>
+  <thead><tr>
+    <th>resid</th><th>resname</th><th>score_med</th><th>%disallowed</th><th>frames</th>
+  </tr></thead>
+  <tbody id="localOpsBody"></tbody>
+</table>
   <script>
     const runBtn = document.getElementById('runBtn');
     const fileInp = document.getElementById('pdb');

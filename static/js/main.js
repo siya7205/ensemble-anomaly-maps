@@ -5,7 +5,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const status    = document.getElementById("status");
   const ramaFrame = document.getElementById("ramaFrame");
   const tbody     = document.getElementById("topBody");
+const loadLocalBtn  = document.getElementById("loadLocalOps");
+const localOpsBody  = document.getElementById("localOpsBody");
+const localOpsPathP = document.getElementById("localOpsPath");
 
+if (loadLocalBtn) {
+  loadLocalBtn.addEventListener("click", async () => {
+    localOpsBody.innerHTML = "<tr><td colspan='5'>Loading…</td></tr>";
+    try {
+      const r = await fetch("/api/local_ops_top");
+      const js = await r.json();
+      if (!r.ok || js.error) throw new Error(js.error || ("HTTP " + r.status));
+      localOpsPathP.textContent = "file: " + js.path;
+      localOpsBody.innerHTML = js.rows.map(x => `
+        <tr>
+          <td>${x.resid}</td><td>${x.resname}</td>
+          <td>${(+x.local_score_med).toFixed(3)}</td>
+          <td>${(+x.rama_disallowed_pct).toFixed(1)}%</td>
+          <td>${x.n_frames}</td>
+        </tr>`).join("");
+    } catch (e) {
+      localOpsBody.innerHTML = `<tr><td colspan="5">Error: ${e.message}</td></tr>`;
+    }
+  });
+}
   async function refreshTop() {
     try {
       const r = await fetch("/api/top_anomalies");
