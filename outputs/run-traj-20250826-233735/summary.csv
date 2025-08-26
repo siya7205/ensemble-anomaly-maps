@@ -1,0 +1,2 @@
+n_frames_total,n_residues,win,step,stride,overall_mean_pct_disallowed,overall_max_pct_disallowed,overall_mean_rama_distance,overall_max_rama_distance
+194,76,20,10,1,66.94926749864351,100.0,1.542757629171806,6.256686206141562
