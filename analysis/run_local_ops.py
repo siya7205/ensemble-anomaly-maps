@@ -1,114 +1,69 @@
 # analysis/run_local_ops.py
-# ------------------------------------------------------------
-# CLI runner for analysis/local_ops.py
-# Usage:
-#   python -m analysis.run_local_ops <pdb_or_list> [--out outputs/run-local-<stamp>]
-# Notes:
-# - Accepts either a single .pdb OR a text file containing one path per line
-#   (each line: a .pdb;.frames from all will be concatenated)
-# - Writes:
-#     outdir/local_ops.csv                (per-frame, per-residue features)
-#     outdir/local_ops_summary.csv        (per-residue rollup across frames)
-# ------------------------------------------------------------
-
-from __future__ import annotations
-import sys, os, argparse, time
-from pathlib import Path
+import os, sys, time
 import pandas as pd
-import numpy as np
 import mdtraj as md
 
 from .local_ops import compute_local_ops
 
-def _is_list_file(path: Path) -> bool:
-    # treat as list file if it's not .pdb and exists
-    return path.suffix.lower() != ".pdb" and path.exists()
+def summarize(df: pd.DataFrame) -> pd.DataFrame:
+    gb = df.groupby(["resid","resname"])
+    out = gb.agg(
+        local_score_med=("local_score","median"),
+        rama_disallowed_pct=("rama_allowed", lambda x: 100.0*(1.0 - x.mean())),
+        rama_dist_med=("rama_distance","median"),
+        omega_pen_med=("omega_penalty","median"),
+        bondlen_zmax_med=("bondlen_zmax","median"),
+        bondang_zmax_med=("bondang_zmax","median"),
+        chi_rotamer_dev_med=("chi_rotamer_dev","median"),
+        sasa_norm_med=("sasa_norm","median"),
+        n_frames=("frame","count"),
+    ).reset_index()
 
-def _load_traj_from_list(list_path: Path) -> md.Trajectory:
-    """Load multiple PDBs (one per line) as concatenated frames."""
-    pdbs = [ln.strip() for ln in list_path.read_text().splitlines() if ln.strip()]
-    if not pdbs:
-        raise ValueError(f"No paths in list file: {list_path}")
-    trajs = []
-    for p in pdbs:
-        print(f"[local_ops] loading {p}")
-        t = md.load(p)
-        trajs.append(t)
-    return md.join(trajs)
+    # DSSP percentages if 'ss' column exists (H/E/C)
+    if "ss" in df.columns:
+        def pct(df_sub, label):
+            return 100.0 * (df_sub["ss"] == label).mean()
+        ss_pct = gb.apply(lambda g: pd.Series({
+            "ss_H_pct": pct(g, "H"),
+            "ss_E_pct": pct(g, "E"),
+            "ss_C_pct": pct(g, "C"),
+        })).reset_index(drop=True)
+        out = pd.concat([out, ss_pct], axis=1)
 
-def _rollup(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-residue summary across frames."""
-    if df.empty:
-        return df
-    # robust stats helpers
-    def med(x): return np.median(x)
-    def mad(x): return np.median(np.abs(x - np.median(x)))
+    return out.sort_values("local_score_med", ascending=False)
 
-    grp = df.groupby(["resid", "resname"], sort=True)
-    out = pd.DataFrame({
-        "n_frames": grp.size(),
-        "phi_med": grp["phi_deg"].median(),
-        "psi_med": grp["psi_deg"].median(),
-        "omega_med": grp["omega_deg"].median(),
-        "rama_disallowed_pct": 100 * (1 - grp["rama_allowed"].mean()),
-        "rama_dist_med": grp["rama_distance"].median(),
-        "omega_pen_med": grp["omega_penalty"].median(),
-        "bondlen_zmax_med": grp["bondlen_zmax"].median(),
-        "bondang_zmax_med": grp["bondang_zmax"].median(),
-        "chi_rotamer_dev_med": grp["chi_rotamer_dev"].median(),
-        "sasa_norm_med": grp["sasa_norm"].median(),
-        "local_score_med": grp["local_score"].median(),
-    }).reset_index()
+def main(pdb_path: str, out_dir: str | None = None):
+    name = os.path.basename(pdb_path)
+    print(f"[local_ops] loading {name}")
+    traj = md.load(pdb_path)
 
-    # add MADs for a few key cols
-    for c in ["phi_deg", "psi_deg", "local_score"]:
-        out[f"{c.split('_')[0]}_mad"] = grp[c].apply(mad).values
-
-    # simple ranking by median local_score (higher => worse)
-    out = out.sort_values("local_score_med", ascending=False).reset_index(drop=True)
-    return out
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("input", help="Path to a .pdb OR a text file listing .pdb paths (one per line)")
-    ap.add_argument("--out", help="Output directory (default: outputs/run-local-<timestamp>)")
-    args = ap.parse_args()
-
-    inp = Path(args.input).expanduser().resolve()
-    if not inp.exists():
-        print(f"Input not found: {inp}", file=sys.stderr)
-        sys.exit(1)
-
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    outdir = Path(args.out) if args.out else Path("outputs") / f"run-local-{stamp}"
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    # load trajectory
-    if _is_list_file(inp):
-        traj = _load_traj_from_list(inp)
-    else:
-        print(f"[local_ops] loading {inp.name}")
-        traj = md.load(str(inp))
-
-    # compute per-(frame,residue) ops
     df = compute_local_ops(traj)
 
-    # write long table
-    long_csv = outdir / "local_ops.csv"
-    df.to_csv(long_csv, index=False)
-    print(f"[local_ops] wrote: {long_csv}")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    run_dir = out_dir or f"outputs/run-local-{stamp}"
+    os.makedirs(run_dir, exist_ok=True)
 
-    # roll up per residue and write
-    summ = _rollup(df)
-    summ_csv = outdir / "local_ops_summary.csv"
-    summ.to_csv(summ_csv, index=False)
-    print(f"[local_ops] wrote: {summ_csv}")
+    csv_path = os.path.join(run_dir, "local_ops.csv")
+    df.to_csv(csv_path, index=False)
+    print(f"[local_ops] wrote: {csv_path}")
 
-    # small console preview
-    preview = summ[["resid","resname","local_score_med","rama_disallowed_pct","n_frames"]].head(12)
-    print("\nTop residues by median local_score:")
-    with pd.option_context("display.max_columns", None, "display.width", 120):
-        print(preview.to_string(index=False))
+    summ = summarize(df)
+    csv_sum = os.path.join(run_dir, "local_ops_summary.csv")
+    summ.to_csv(csv_sum, index=False)
+    print(f"[local_ops] wrote: {csv_sum}\n")
+
+    print("Top residues by median local_score:")
+    cols = ["resid","resname","local_score_med","rama_disallowed_pct","n_frames"]
+    # show DSSP if present
+    for c in ("ss_H_pct","ss_E_pct","ss_C_pct"):
+        if c in summ.columns and c not in cols:
+            cols.append(c)
+    print(summ[cols].head(12).to_string(index=False))
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("usage: python -m analysis.run_local_ops <protein.pdb> [out_dir]")
+        sys.exit(1)
+    pdb = sys.argv[1]
+    outd = sys.argv[2] if len(sys.argv) > 2 else None
+    main(pdb, outd)
