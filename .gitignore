@@ -6,3 +6,10 @@ __pycache__/
 data/**/*.parquet
 data/**/*.csv
 results/**
+
+# temp uploads
+data/tmp*.pdb
+# heavy runs (keep latest only)
+outputs/run-*/
+outputs/run-local-*/
+outputs/run-traj-*/
