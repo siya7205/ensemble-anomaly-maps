@@ -1,307 +1,170 @@
 # app/app.py
-import os
-import shutil
-import tempfile
-from datetime import datetime
-from pathlib import Path
+import os, json, pathlib
+from flask import Flask, jsonify, render_template, send_file
 
-from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
-import pandas as pd
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+OUT = ROOT / "outputs"
+DATA = ROOT / "data"
+STATIC = ROOT / "static"
+TEMPL = ROOT / "templates"
 
-# ---------- repo paths ----------
-ROOT      = Path(__file__).resolve().parents[1]
-DATA_DIR  = ROOT / "data"
-STATIC    = ROOT / "static"
-TEMPLATES = ROOT / "templates"
-OUTPUTS   = ROOT / "outputs"           # NEW: where we persist results
+app = Flask(__name__, static_folder=str(STATIC), template_folder=str(TEMPL))
 
-# analysis helpers (from analysis/*.py)
-from analysis.angles import compute_phi_psi
-from analysis.anomaly import score_if
-from analysis.aggregate import rollup
+# ---------- helpers ----------
+def _latest_dir(glob_pat):
+    matches = sorted(OUT.glob(glob_pat), key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
 
-app = Flask(__name__)
-CORS(app)  # allow front-ends (trame or static html) to call the API
-
-
-# ---------------- PAGES ----------------
-@app.get("/")
-def home():
-    """Serve the simple UI (if present)."""
-    return send_from_directory(TEMPLATES, "index.html")
-
-
-@app.get("/rama")
-def rama_html():
-    """Serve the latest Ramachandran HTML if present."""
-    rama = STATIC / "rama_view.html"
-    if not rama.exists():
-        return "Ramachandran plot not generated yet. Upload a PDB or run analysis.", 404
-    return send_from_directory(STATIC, "rama_view.html")
-
-@app.get("/static/<path:p>")
-def static_files(p):
-    """Pass-through for static assets (JS, CSS, HTML)."""
-    return send_from_directory(STATIC, p)
-
-
-# ---------------- API ----------------
-@app.get("/api/top_anomalies")
-def api_top_anomalies():
-    """
-    Return top residues by mean_if with the fields expected by the frontend:
-      resid, mean_if, pct_disallowed, n_frames
-    Reads from data/rollup.csv (latest run written there by /api/score_pdb).
-    """
-    csv_path = DATA_DIR / "rollup.csv"
-    if not csv_path.exists():
-        return jsonify({"error": "rollup.csv not found — upload a PDB or run analysis first"}), 404
-
-    df = pd.read_csv(csv_path)
-    want_cols = ["resid", "mean_if", "pct_disallowed", "n_frames"]
-    for c in want_cols:
-        if c not in df.columns:
-            df[c] = 0
-
-    df["mean_if"] = pd.to_numeric(df["mean_if"], errors="coerce").fillna(0.0)
-    df["pct_disallowed"] = pd.to_numeric(df["pct_disallowed"], errors="coerce").fillna(0.0)
-    df["n_frames"] = pd.to_numeric(df["n_frames"], errors="coerce").fillna(0).astype(int)
-
-    top = (
-        df.sort_values("mean_if", ascending=False)
-          .head(50)[want_cols]
-          .to_dict(orient="records")
-    )
-    return jsonify(top)
-
-# ---------------- Local-ops API ----------------
-import glob
-
-@app.get("/api/local_ops_top")
-def api_local_ops_top():
-    """
-    Return top residues from the latest analysis/run_local_ops.py output.
-    Looks for outputs/run-local-*/local_ops_summary.csv
-    """
-    paths = sorted(glob.glob(str(ROOT / "outputs" / "run-local-*" / "local_ops_summary.csv")))
-    if not paths:
-        return jsonify({"error": "No local_ops_summary.csv found. Run: python -m analysis.run_local_ops <pdb>"}), 404
-
-    csv_path = Path(paths[-1])
-    df = pd.read_csv(csv_path)
-
-    # Map columns -> concise names expected by the UI
-    if "local_score_med" not in df.columns:
-        return jsonify({"error": f"Unexpected columns in {csv_path.name}"}), 500
-
-    out = (
-        df.rename(columns={
-            "local_score_med": "score_med",
-            "rama_disallowed_pct": "pct_disallowed",
-            "n_frames": "frames",
-        })[["resid", "resname", "score_med", "pct_disallowed", "frames"]]
-          .sort_values("score_med", ascending=False)
-          .head(50)
-          .to_dict(orient="records")
-    )
-    return jsonify(out)
-@app.get("/api/points")
-def api_points():
-    """
-    Points endpoint for the 3D viewer.
-    Tries outputs/latest/points.json, else falls back to building from data/rollup.csv.
-    Schema: [{label, score, x, y, z}, ...]  (x/y/z are 0 unless you add coords)
-    """
-    latest_points = OUTPUTS / "latest" / "points.json"
-    if latest_points.exists():
-        try:
-            return send_from_directory(latest_points.parent, latest_points.name)
-        except Exception:
-            pass
-
-    # Fallback: build minimal points from rollup
-    csv_path = DATA_DIR / "rollup.csv"
-    if not csv_path.exists():
-        return jsonify([])
-
-    df = pd.read_csv(csv_path)
-    # Minimal schema without 3D coords
-    out = []
-    for _, r in df.iterrows():
-        out.append({
-            "label": f"Res {int(r.get('resid', -1))}",
-            "score": float(r.get("mean_if", 0.0)),
-            "x": 0.0, "y": 0.0, "z": 0.0,
-        })
-    return jsonify(out)
-
-
-@app.post("/api/score_pdb")
-def api_score_pdb():
-    """
-    Accept an uploaded .pdb (form field 'file'), compute φ/ψ, score with IsolationForest,
-    roll up per-residue, regenerate Ramachandran HTML, persist artifacts to outputs/, and return a summary.
-    """
-    if "file" not in request.files or request.files["file"].filename == "":
-        return jsonify({"error": "Upload a .pdb file with form field name 'file'"}), 400
-
-    f = request.files["file"]
-    if not f.filename.lower().endswith(".pdb"):
-        return jsonify({"error": "Not a .pdb file"}), 400
-
-    # Ensure dirs
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    STATIC.mkdir(parents=True, exist_ok=True)
-    OUTPUTS.mkdir(parents=True, exist_ok=True)
-
-    # Timestamped run dir + a rolling 'latest' dir
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = OUTPUTS / f"run-{ts}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    latest_dir = OUTPUTS / "latest"
-    if latest_dir.exists() and latest_dir.is_dir():
-        # Clear latest to avoid stale files
-        for p in latest_dir.iterdir():
-            try:
-                p.unlink()
-            except IsADirectoryError:
-                shutil.rmtree(p)
-    else:
-        latest_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save upload to a temp pdb (also copy into run_dir)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdb", dir=DATA_DIR) as tf:
-        pdb_path = Path(tf.name)
-        f.save(pdb_path)
-    shutil.copy2(pdb_path, run_dir / f.filename)
-
-    # Canonical "latest" artifact paths in /data and /static
-    angles_parquet        = DATA_DIR / "angles.parquet"
-    angles_scored_parquet = DATA_DIR / "angles_scored.parquet"
-    rollup_csv            = DATA_DIR / "rollup.csv"
-    rama_html             = STATIC / "rama_view.html"
-
-    # --- 1) φ/ψ angles ---
-    angles_obj = compute_phi_psi(str(pdb_path))  # some versions expect str
-    if isinstance(angles_obj, pd.DataFrame):
-        angles_obj.to_parquet(angles_parquet)
-    elif isinstance(angles_obj, (str, Path)):
-        src = Path(angles_obj)
-        if src.exists():
-            if src.resolve() != angles_parquet.resolve():
-                df_tmp = pd.read_parquet(src) if src.suffix == ".parquet" else pd.read_csv(src)
-                df_tmp.to_parquet(angles_parquet)
-        else:
-            return jsonify({"error": f"compute_phi_psi returned non-existent path: {src}"}), 500
-    else:
-        return jsonify({"error": "compute_phi_psi returned unexpected type"}), 500
-
-    # --- 2) IsolationForest scoring ---
-    score_if(str(angles_parquet), str(angles_scored_parquet), contamination=0.05)
-
-    # --- 3) Per-residue rollup ---
-    rollup(str(angles_scored_parquet), str(rollup_csv))
-
-    # --- 4) Ramachandran HTML (colored by if_score) ---
+def _safe_float(x, default=0.0):
     try:
-        import plotly.express as px
-        df_scored = pd.read_parquet(angles_scored_parquet)
-        fig = px.scatter(
-            df_scored, x="phi", y="psi", color="if_score",
-            range_x=[-180, 180], range_y=[-180, 180], height=700,
-            title="Ramachandran (φ/ψ) — colored by IsolationForest anomaly score",
-        )
-        fig.update_layout(xaxis_title="phi (°)", yaxis_title="psi (°)")
-        fig.write_html(rama_html, include_plotlyjs="cdn")
-    except Exception as e:
-        print("Plot generation failed:", e)
-
-    # --- 5) Build 3D viewer points.json (minimal if no coords available) ---
-    points_json = []
-    try:
-        df_roll = pd.read_csv(rollup_csv)
-        for _, r in df_roll.iterrows():
-            points_json.append({
-                "label": f"Res {int(r.get('resid', -1))}",
-                "score": float(pd.to_numeric(r.get("mean_if", 0.0), errors="coerce") or 0.0),
-                "x": 0.0, "y": 0.0, "z": 0.0,  # replace with real coords if/when you have them
-            })
+        return float(x)
     except Exception:
-        pass
+        return default
 
-    # --- 6) PERSIST: copy artifacts to run_dir and to outputs/latest ---
-    # Save canonical (latest) copies first (they already exist in data/static)
-    # Then copy to run_dir and latest_dir for archival / quick access.
-    def safe_copy(src: Path, dst: Path):
-        if src.exists():
-            if not dst.parent.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+# ---------- pages ----------
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-    # Save points.json + summary.json
-    import json
-    (run_dir / "points.json").write_text(json.dumps(points_json, indent=2))
-    (latest_dir / "points.json").write_text(json.dumps(points_json))
+@app.route("/local")
+def page_local():
+    return render_template("local.html")
 
-    # Copy parquet/csv/html into the run dir
-    safe_copy(angles_parquet,        run_dir / "angles.parquet")
-    safe_copy(angles_scored_parquet, run_dir / "angles_scored.parquet")
-    safe_copy(rollup_csv,            run_dir / "rollup.csv")
-    safe_copy(rama_html,             run_dir / "rama_view.html")
+@app.route("/deep")
+def page_deep():
+    return render_template("deep.html")
 
-    # Also mirror into outputs/latest/
-    safe_copy(angles_parquet,        latest_dir / "angles.parquet")
-    safe_copy(angles_scored_parquet, latest_dir / "angles_scored.parquet")
-    safe_copy(rollup_csv,            latest_dir / "rollup.csv")
-    safe_copy(rama_html,             latest_dir / "rama_view.html")
+@app.route("/three-d")
+def page_three_d():
+    # the page fetches this file via /file/...
+    return render_template("three_d.html", pdb_rel="data/multi_model_anomaly.pdb")
 
-    # Write a summary.json for the run
-    summary = {
-        "timestamp": ts,
-        "pdb_filename": f.filename,
-        "run_dir": str(run_dir),
-        "artifacts": {
-            "angles_parquet":        str(run_dir / "angles.parquet"),
-            "angles_scored_parquet": str(run_dir / "angles_scored.parquet"),
-            "rollup_csv":            str(run_dir / "rollup.csv"),
-            "points_json":           str(run_dir / "points.json"),
-            "rama_html":             str(run_dir / "rama_view.html"),
-        },
-    }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    (latest_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+# ---------- api ----------
+@app.route("/api/local_ops_top")
+def api_local_ops_top():
+    """Return top residues from latest outputs/run-local-*/per_residue.csv (or local_ops_summary.csv)."""
+    import pandas as pd
+    run = _latest_dir("run-local-*")
+    if not run:
+        return jsonify(error="No local-ops runs found"), 404
 
-    # --- 7) Prepare top10 for response ---
-    df_roll = pd.read_csv(rollup_csv) if rollup_csv.exists() else pd.DataFrame()
-    if not df_roll.empty:
-        for c in ["mean_if", "pct_disallowed"]:
-            if c in df_roll:
-                df_roll[c] = pd.to_numeric(df_roll[c], errors="coerce").fillna(0.0)
-        if "n_frames" in df_roll:
-            df_roll["n_frames"] = pd.to_numeric(df_roll["n_frames"], errors="coerce").fillna(0).astype(int)
-        top10 = (
-            df_roll.sort_values("mean_if", ascending=False)
-                   .head(10)[["resid", "mean_if", "pct_disallowed", "n_frames"]]
-                   .to_dict(orient="records")
-        )
-    else:
-        top10 = []
+    candidates = [run / "per_residue.csv", run / "local_ops_summary.csv", run / "per_residue_local.csv"]
+    src = next((c for c in candidates if c.exists()), None)
+    if not src:
+        return jsonify(error=f"No per-residue CSV in {run.name}"), 404
 
-    return jsonify({
-        "ok": True,
-        "run_dir": str(run_dir),
-        "latest_dir": str(latest_dir),
-        "angles_parquet": str(angles_parquet),
-        "angles_scored_parquet": str(angles_scored_parquet),
-        "rollup_csv": str(rollup_csv),
-        "rama_html": "/rama",
-        "points_json": "/api/points",
-        "top10": top10,
-    })
+    df = pd.read_csv(src)
 
+    # Normalize columns
+    rename = {}
+    for a, b in (("local_score_mean", "local_score_med"), ("local_score_median", "local_score_med")):
+        if a in df.columns and "local_score_med" not in df.columns:
+            rename[a] = "local_score_med"
+    for a in ("rama_disallowed_pct", "%disallowed"):
+        if a in df.columns:
+            rename[a] = "rama_disallowed_pct"
+            break
+    for a in ("n_frames", "frames", "N_frames"):
+        if a in df.columns:
+            rename[a] = "n_frames"
+            break
+    df = df.rename(columns=rename)
 
+    need = {"resid", "resname", "local_score_med"}
+    if not need.issubset(set(df.columns)):
+        # Derive a quick summary from per-frame table if needed
+        if "local_score" in df.columns and {"resid", "resname"}.issubset(df.columns):
+            g = df.groupby(["resid", "resname"])["local_score"].median().rename("local_score_med")
+            if "rama_allowed" in df.columns:
+                pct = (1 - df.groupby(["resid","resname"])["rama_allowed"].mean()) * 100
+                pct = pct.rename("rama_disallowed_pct")
+            else:
+                pct = g * 0
+            nf = df.groupby(["resid","resname"]).size().rename("n_frames")
+            df = g.reset_index().merge(pct.reset_index(), on=["resid","resname"]).merge(nf.reset_index(), on=["resid","resname"])
+        else:
+            return jsonify(error="per_residue-like columns not found"), 500
+
+    df = df.sort_values("local_score_med", ascending=False).head(30)
+    rows = []
+    for _, r in df.iterrows():
+        rows.append({
+            "resid": int(r.get("resid", -1)),
+            "resname": str(r.get("resname", "UNK")),
+            "local_score_med": _safe_float(r.get("local_score_med", 0)),
+            "rama_disallowed_pct": _safe_float(r.get("rama_disallowed_pct", 0)),
+            "n_frames": int(r.get("n_frames", 0)),
+        })
+    return jsonify(path=str(src.relative_to(ROOT)), rows=rows)
+
+@app.route("/api/deep_latest")
+def api_deep_latest():
+    """Summarize latest deep run under outputs/run-traj-*/deep/."""
+    import pandas as pd
+    run = _latest_dir("run-traj-*")
+    if not run:
+        return jsonify(error="No trajectory runs yet"), 404
+    deep = run / "deep"
+    if not deep.exists():
+        return jsonify(error="No deep/ folder in latest trajectory run"), 404
+
+    def read_csv_rel(name, limit=None):
+        p = deep / name
+        if p.exists():
+            df = pd.read_csv(p)
+            return df if limit is None else df.head(limit)
+        return None
+
+    anomalies = read_csv_rel("anomalies.csv", 20)
+    hotspots = read_csv_rel("residue_hotspots.csv", 30)
+    hybrid = read_csv_rel("hybrid_scores.csv", 30)
+    latent = read_csv_rel("latent_clusters_annot.csv", 30)
+
+    imgs = []
+    for name in ("timeline_clusters.png", "latent_scatter.png", "deep_vs_shallow.png", "recon_over_time.png"):
+        p = deep / name
+        if p.exists():
+            imgs.append(f"/file/{p.relative_to(ROOT)}")
+
+    return jsonify(
+        run_dir=str(run.relative_to(ROOT)),
+        images=imgs,
+        anomalies=(anomalies or pd.DataFrame()).to_dict(orient="records"),
+        hotspots=(hotspots or pd.DataFrame()).to_dict(orient="records"),
+        hybrid_head=(hybrid or pd.DataFrame()).to_dict(orient="records"),
+        latent_head=(latent or pd.DataFrame()).to_dict(orient="records"),
+    )
+
+@app.route("/rama")
+def rama():
+    """Serve latest Ramachandran HTML."""
+    latest = OUT / "latest" / "rama_view.html"
+    if latest.exists():
+        return send_file(str(latest), mimetype="text/html")
+    run = _latest_dir("run-*")
+    if run and (run / "rama_view.html").exists():
+        return send_file(str(run / "rama_view.html"), mimetype="text/html")
+    return "<html><body><p>No Ramachandran plot available yet.</p></body></html>"
+
+@app.route("/file/<path:rel>")
+def file_serve(rel):
+    """Read-only file server for anything under project root (used by images/PDB)."""
+    p = ROOT / rel
+    if not p.exists():
+        return "Not found", 404
+    mime = "text/plain"
+    suf = p.suffix.lower()
+    if suf in {".png", ".jpg", ".jpeg", ".gif"}:
+        mime = "image/png"
+    elif suf in {".html", ".htm"}:
+        mime = "text/html"
+    elif suf == ".csv":
+        mime = "text/csv"
+    elif suf in {".pdb", ".ent", ".cif"}:
+        mime = "chemical/x-pdb"
+    return send_file(str(p), mimetype=mime)
+
+# ---------- main ----------
 if __name__ == "__main__":
-    # Default 5051 unless you set PORT in your shell.
-    port = int(os.environ.get("PORT", 5051))
+    port = int(os.environ.get("PORT", "5051"))
     app.run(host="0.0.0.0", port=port, debug=False)
