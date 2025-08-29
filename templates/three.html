@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>3D Anomaly Viewer</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #topbar { padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 12px; }
+    #viewer { width: 100vw; height: calc(100vh - 56px); }
+    .label { font-size: 14px; opacity: 0.8; }
+    input[type=range] { width: 220px; }
+  </style>
+  <!-- NGL from CDN -->
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+</head>
+<body>
+  <div id="topbar">
+    <div class="label">Model:</div>
+    <input id="modelSlider" type="range" min="0" max="0" value="0" step="1">
+    <span id="modelVal" class="label">0</span>
+
+    <div class="label" style="margin-left:16px;">Color scale:</div>
+    <select id="scheme">
+      <option value="bfactor">Anomaly (B-factor)</option>
+      <option value="sstruc">Secondary structure</option>
+      <option value="chainname">Chain</option>
+    </select>
+
+    <div class="label" style="margin-left:auto;opacity:.7">
+      File: /file/data/multi_model_anomaly.pdb
+    </div>
+  </div>
+  <div id="viewer"></div>
+
+  <script src="/static/js/three.js"></script>
+</body>
+</html>
