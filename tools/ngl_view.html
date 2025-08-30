@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NGL Anomaly Viewer</title>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    /* Make the canvas fill the window */
+    #viewport { position: absolute; inset: 0; }
+    /* Small floating hint */
+    #hint {
+      position: absolute; top: 8px; left: 8px; z-index: 10;
+      background: rgba(0,0,0,0.7); color: #fff; padding: 6px 8px;
+      border-radius: 4px; font: 12px/1.2 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewport"></div>
+  <div id="hint">Color: B-factor (anomaly). Space/Enter = play/pause.</div>
+
+  <script>
+    (async function () {
+      // 1) Basic WebGL / NGL existence check
+      if (typeof NGL === "undefined") {
+        alert("NGL failed to load (CDN blocked?). Try another network or browser.");
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (!gl) {
+        alert("WebGL not available in this browser. Try Chrome.");
+        return;
+      }
+
+      // 2) Start viewer
+      const stage = new NGL.Stage("viewport", { backgroundColor: "white" });
+      window.addEventListener("resize", () => stage.handleResize(), false);
+
+      // 3) Try multi-model first, else fall back to a single frame to debug
+      const MULTI = "data/multi_model_anomaly.pdb";               // served from repo root
+      const FALLBACK = "data/colored_frames/colored_frame_00000.pdb";
+
+      async function loadPDB(path) {
+        const comp = await stage.loadFile(path, { ext: "pdb" });
+        comp.addRepresentation("cartoon", { colorScheme: "bfactor", colorScale: "roygb" });
+        comp.addRepresentation("backbone", { colorScheme: "bfactor" });
+        comp.autoView();
+        return comp;
+      }
+
+      let comp;
+      try {
+        comp = await loadPDB(MULTI);
+        // treat multi-model like a trajectory
+        comp.player.speed = 2.0;
+        comp.player.play();
+      } catch (e) {
+        console.error("Multi-model load failed, trying fallback:", e);
+        alert("Couldn’t load multi-model PDB. Trying a single frame for debugging…");
+        comp = await loadPDB(FALLBACK);
+      }
+
+      // quick keyboard toggle
+      window.addEventListener("keydown", (e) => {
+        if (e.code === "Space" || e.code === "Enter") {
+          comp.player?.isRunning ? comp.player.pause() : comp.player?.play?.();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

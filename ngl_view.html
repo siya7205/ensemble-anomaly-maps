@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NGL Anomaly Viewer</title>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <style>html,body,#viewport{width:100%;height:100%;margin:0;overflow:hidden;}</style>
+</head>
+<body>
+<div id="viewport"></div>
+<script>
+  const stage = new NGL.Stage("viewport", {backgroundColor: "white"});
+  window.addEventListener("resize", () => stage.handleResize(), false);
+
+  // Change this path if your file is elsewhere
+  const pdbPath = "data/multi_model_anomaly.pdb";
+
+  stage.loadFile(pdbPath, { ext: "pdb" }).then(comp => {
+    // Cartoon colored by B-factor (your anomaly score)
+    comp.addRepresentation("cartoon", {
+      colorScheme: "bfactor",
+      colorScale: "roygb"     // rainbow; try "reds" or "blues" if you prefer
+    });
+    // Also show backbone trace so differences pop
+    comp.addRepresentation("backbone", { colorScheme: "bfactor" });
+
+    comp.autoView();
+    // Play through models (multi-model PDB acts like a trajectory)
+    comp.setParameters({ defaultAssembly: "AU" }); // as-is
+    comp.player.play();
+    comp.player.speed = 2.0; // frames per second
+  });
+</script>
+</body>
+</html>

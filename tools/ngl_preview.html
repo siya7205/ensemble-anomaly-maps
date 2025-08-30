@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>NGL Anomaly Preview (B-factor coloring)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; background:#0b1020; color:#eee; }
+    #topbar { display:flex; gap:12px; padding:12px; align-items:center; background:#121a34; border-bottom:1px solid #263156; }
+    #stage { width:100vw; height:calc(100vh - 64px); }
+    input[type="range"] { width:280px; }
+    .pill { padding:4px 8px; background:#1a2447; border:1px solid #2b396b; border-radius:6px; }
+    .muted { opacity:.8; font-size:12px; }
+  </style>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+</head>
+<body>
+  <div id="topbar">
+    <label class="pill">
+      <input id="file" type="file" accept=".pdb,.cif,.mmcif" />
+      <span>Choose PDB (multi-model)</span>
+    </label>
+    <button id="fit" class="pill">Fit</button>
+    <label class="pill">Model <input id="frame" type="range" min="0" max="0" value="0"></label>
+    <span class="muted">Color: <b>B-factor</b> (your anomaly score)</span>
+  </div>
+  <div id="stage"></div>
+
+  <script>
+    const stage = new NGL.Stage("stage", { backgroundColor: "black" });
+    window.addEventListener("resize", () => stage.handleResize());
+
+    let comp = null;
+    let nModels = 1;
+
+    function colorByBfactor(sel) {
+      // colorScheme 'bfactor' uses B-factor column (anomaly) if present
+      sel.addRepresentation("cartoon", { colorScheme: "bfactor", colorScale: "rwb", quality: "auto" });
+      sel.addRepresentation("ball+stick", { sele: "hetero", colorScheme: "element" });
+    }
+
+    async function loadFile(file) {
+      if (comp) { stage.removeComponent(comp); comp = null; }
+      const blob = URL.createObjectURL(file);
+      comp = await stage.loadFile(blob, { ext: file.name.split(".").pop().toLowerCase() });
+      const structure = comp.structure;
+      nModels = structure.modelStore.count;
+      document.getElementById("frame").max = Math.max(0, nModels - 1);
+      document.getElementById("frame").value = 0;
+
+      // show first model
+      comp.setSelection("@MODEL 1");
+      colorByBfactor(comp);
+      stage.autoView();
+    }
+
+    // scrub models like a trajectory
+    document.getElementById("frame").addEventListener("input", (e) => {
+      const idx = parseInt(e.target.value, 10); // 0-based
+      if (!comp) return;
+      comp.setSelection(`@MODEL ${idx + 1}`);
+    });
+
+    document.getElementById("fit").addEventListener("click", () => stage.autoView());
+
+    // file input
+    document.getElementById("file").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (f) loadFile(f);
+    });
+
+    // tip for you: drag the file onto the canvas also works
+    stage.signals.clicked.add(() => {}); // keep stage active
+    stage.mouseControls.add("drag-drop", (files) => {
+      if (files && files.length) loadFile(files[0]);
+    });
+  </script>
+</body>
+</html>
