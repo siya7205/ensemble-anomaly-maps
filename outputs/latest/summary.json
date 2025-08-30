@@ -1,12 +1,12 @@
 {
-  "timestamp": "20250826-224429",
-  "pdb_filename": "sample_10.pdb",
-  "run_dir": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429",
+  "timestamp": "20250828-015319",
+  "pdb_filename": "sample_100.pdb",
+  "run_dir": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319",
   "artifacts": {
-    "angles_parquet": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429/angles.parquet",
-    "angles_scored_parquet": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429/angles_scored.parquet",
-    "rollup_csv": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429/rollup.csv",
-    "points_json": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429/points.json",
-    "rama_html": "/Users/siya/capstone/ensemble-clean/outputs/run-20250826-224429/rama_view.html"
+    "angles_parquet": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319/angles.parquet",
+    "angles_scored_parquet": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319/angles_scored.parquet",
+    "rollup_csv": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319/rollup.csv",
+    "points_json": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319/points.json",
+    "rama_html": "/Users/siya/capstone/ensemble-clean/ensemble-anomaly-maps/outputs/run-20250828-015319/rama_view.html"
   }
 }
