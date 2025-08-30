@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Protein Anomaly Viewer</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/ngl@2.0.0-beta.14"></script>
+</head>
+<body>
+    <div id="viewport" style="width: 800px; height: 600px;"></div>
+
+    <script type="text/javascript">
+        var stage = new NGL.Stage("viewport");
+
+        // Load the multi-model PDB with B-factor annotations
+        stage.loadFile("data/multi_model_anomaly_with_bfactor.pdb").then(function (component) {
+            // Apply B-factor coloring (anomaly scores)
+            component.addRepresentation("cartoon", { color: "bfactor" });
+            component.autoView();  // Automatically adjust the view to show the structure
+        });
+    </script>
+</body>
+</html>

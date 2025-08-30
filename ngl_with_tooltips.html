@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Protein Viewer with Tooltips</title>
+    <script src="https://unpkg.com/ngl@2.0.0/dist/ngl.js"></script>
+  </head>
+  <body>
+    <h1>Protein Anomaly Viewer with Tooltips</h1>
+    <div id="viewport" style="width: 800px; height: 600px;"></div>
+    <script>
+      var stage = new NGL.Stage("viewport");
+
+      stage.loadFile("data/multi_model_anomaly.pdb").then(function (o) {
+        o.autoView();
+        o.setColorByAtom('bfactor'); // Color by B-factor (anomaly score)
+
+        // Add tooltips to each atom
+        o.addRepresentation("cartoon");
+        o.addRepresentation("surface");
+        
+        o.setSelection('all');
+        o.eachAtom(function(atom) {
+          atom.setTooltip(atom.resname + ' ' + atom.index + ' ' + atom.bfactor);
+        });
+
+        stage.update();
+      });
+    </script>
+  </body>
+</html>
