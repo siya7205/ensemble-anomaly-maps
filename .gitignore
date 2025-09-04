@@ -1,15 +1,7 @@
+data/colored_frames/
+outputs/
+*.xtc
+*.pdb
 __pycache__/
 *.pyc
-.DS_Store
-.vscode/
-.env
-data/**/*.parquet
-data/**/*.csv
-results/**
 
-# temp uploads
-data/tmp*.pdb
-# heavy runs (keep latest only)
-outputs/run-*/
-outputs/run-local-*/
-outputs/run-traj-*/
