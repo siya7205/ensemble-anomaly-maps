@@ -1,76 +1,121 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>NGL Anomaly B-factor Viewer</title>
-  <script src="https://unpkg.com/ngl@2.0.0-dev.38/dist/ngl.js"></script>
+  <meta charset="utf-8" />
+  <title>NGL Anomaly Viewer</title>
   <style>
-    html,body,#viewport{width:100%;height:100%;margin:0;overflow:hidden;background:#111}
-    #hud{position:absolute;top:8px;left:8px;color:#ddd;font:14px system-ui;background:rgba(0,0,0,.35);padding:6px 8px;border-radius:4px}
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;color:#ddd;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #ui{position:fixed;left:10px;top:10px;z-index:10}
+    #viewport{position:absolute;left:0;top:0;right:0;bottom:0}
+    button, input[type=range]{margin-right:8px}
+    .dot{display:inline-block;width:12px;height:12px;border-radius:6px;background:#fff;vertical-align:middle}
   </style>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
 </head>
 <body>
-<div id="viewport"></div>
-<div id="hud">Color: <b>B-factor</b> (your anomaly score). Space/Enter = play/pause</div>
-<script>
-(async function(){
-  const stage = new NGL.Stage("viewport", { backgroundColor: "black" });
-  window.addEventListener("resize",()=>stage.handleResize(), false);
+  <div id="ui">
+    <div>Color: <b>B-factor</b> (your anomaly).</div>
+    <div style="margin-top:6px;">
+      <button id="playBtn">Play</button>
+      <button id="pauseBtn">Pause</button>
+      &nbsp; Frame: <span id="fidx">–</span>/<span id="fmax">–</span>
+      <input id="slider" type="range" min="0" max="0" step="1" value="0" style="width:240px;vertical-align:middle;">
+      <span class="dot" id="playingDot" title="playing" style="margin-left:6px;background:#888"></span>
+    </div>
+    <div style="margin-top:6px;">
+      <span id="pickInfo">Anomaly: –</span>
+    </div>
+  </div>
+  <div id="viewport"></div>
 
-  async function loadMulti(url){
-    const comp = await stage.loadFile(url, {
-      ext: "pdb",
-      firstModelOnly: false,      // <-- IMPORTANT
-      asTrajectory: true          // <-- IMPORTANT (force building a traj)
-    });
-    comp.addRepresentation("cartoon", { colorScheme: "bfactor", opacity: 1.0 });
-    comp.autoView();
+  <script>
+    // ---- params ----
+    const qp = new URLSearchParams(location.search);
+    const pdbURL = qp.get('src') || '/data/multi_model_anomaly.pdb';
+    const tsURL  = qp.get('ts')  || '/data/anomaly_timeseries.json';
 
-    const traj = comp.traj;
-    if (!traj || traj.frameCount < 2) {
-      throw new Error("No multi-model trajectory detected.");
-    }
+    const stage = new NGL.Stage("viewport", { sampleLevel: 1, backgroundColor: "black" });
+    window.addEventListener("resize", () => stage.handleResize());
 
-    let playing = false;
-    const speed = 30; // frames per second
-    let handle = null;
+    let comp, traj, nFrames = 0, playing = false, playTimer = null;
+    let timeseries = null;
 
-    function play(){ if(playing) return;
-      playing = true;
-      let f = 0;
-      handle = setInterval(()=>{
-        f = (f + 1) % traj.frameCount;
-        traj.setFrame(f);
-        stage.requestRender();
-      }, 1000/speed);
-    }
-    function stop(){ if(handle){ clearInterval(handle); handle=null; } playing=false; }
-
-    window.addEventListener("keydown", (ev)=>{
-      if (ev.code === "Space" || ev.code === "Enter") {
-        playing ? stop() : play();
+    function setPlaying(p){
+      playing = p;
+      document.getElementById('playingDot').style.background = p ? '#1ad' : '#888';
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+      if (p){
+        playTimer = setInterval(()=> {
+          const i = (traj.player.frame + 1) % nFrames;
+          traj.player.gotoFrame(i);
+          updateUI();
+        }, 80);
       }
+    }
+
+    function updateUI(){
+      const i = traj ? traj.player.frame : 0;
+      document.getElementById('fidx').textContent = nFrames ? (i+1) : '–';
+      document.getElementById('fmax').textContent = nFrames || '–';
+      const slider = document.getElementById('slider');
+      slider.max = nFrames ? (nFrames-1) : 0;
+      if (Number(slider.value) !== i) slider.value = i;
+    }
+
+    // load timeseries (optional)
+    fetch(tsURL).then(r => r.ok ? r.json() : null).then(js => { timeseries = js; }).catch(()=>{});
+
+    // ---- load multi-model PDB as trajectory (key: asTrajectory:true) ----
+    stage.loadFile(pdbURL, { ext: "pdb", asTrajectory: true }).then((o) => {
+      comp = o;
+      // cartoon colored by B-factor (B-factor already holds your anomaly)
+      comp.addRepresentation("cartoon", { color: "bfactor", roughness: 0.3, metalness: 0.0, opacity: 1.0 });
+      comp.autoView();
+
+      traj = comp.trajectory;
+      nFrames = traj.frameCount;   // should be 22 for your file
+      updateUI();
+
+      // picking -> show residue + anomaly
+      stage.signals.clicked.add((p)=>{
+        if (!p || !p.atom || !timeseries) { document.getElementById('pickInfo').textContent = 'Anomaly: –'; return; }
+        const atom = p.atom;
+        const frame = traj.player.frame;
+        const resid = atom.resno;              // 1-based in most PDBs
+        let score = null;
+        if (timeseries.per_frame && timeseries.per_frame[frame] && timeseries.per_frame[frame][resid]){
+          score = timeseries.per_frame[frame][resid];
+        }
+        const txt = `Residue ${atom.resname} ${resid}` + (score!=null ? ` | anomaly=${score.toFixed(3)}` : '');
+        document.getElementById('pickInfo').textContent = txt || 'Anomaly: –';
+      });
+
+    }).catch(err => {
+      alert("Couldn't load multi-model PDB. Trying a single frame for debugging…");
+      // best-effort fallback without trajectory
+      stage.loadFile(pdbURL, { ext: "pdb" }).then(o=>{
+        o.addRepresentation("cartoon", { color: "bfactor" });
+        o.autoView();
+      });
     });
 
-    return comp;
-  }
+    // UI wiring
+    document.getElementById('playBtn').onclick = ()=> setPlaying(true);
+    document.getElementById('pauseBtn').onclick = ()=> setPlaying(false);
+    document.getElementById('slider').oninput = (e)=>{
+      if (!traj) return;
+      const i = Number(e.target.value);
+      traj.player.gotoFrame(i);
+      updateUI();
+    };
 
-  async function loadSingle(url){
-    const comp = await stage.loadFile(url, { ext:"pdb" });
-    comp.addRepresentation("cartoon", { colorScheme: "bfactor" });
-    comp.autoView();
-  }
-
-  const multiUrl  = "/data/multi_model_anomaly.pdb";
-  const singleUrl = "/data/colored_frames/colored_frame_00000.pdb";
-
-  try {
-    await loadMulti(multiUrl);
-  } catch (e) {
-    alert("Couldn't load multi-model PDB. Trying a single frame for debugging...");
-    await loadSingle(singleUrl);
-  }
-})();
-</script>
+    // keyboard shortcuts
+    window.addEventListener('keydown', (e)=>{
+      if (e.code === 'Space' || e.code === 'Enter'){ e.preventDefault(); setPlaying(!playing); }
+      if (!traj) return;
+      if (e.key === 'ArrowRight'){ traj.player.gotoFrame((traj.player.frame+1)%nFrames); updateUI(); }
+      if (e.key === 'ArrowLeft'){ traj.player.gotoFrame((traj.player.frame-1+nFrames)%nFrames); updateUI(); }
+    });
+  </script>
 </body>
 </html>

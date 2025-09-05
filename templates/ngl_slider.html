@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Anomaly Viewer (per-residue, B-factor)</title>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <style>
+    :root { --bar-h: 12px; }
+    html, body { height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:#000; color:#eee; }
+    #topbar { padding:8px 12px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #222; background:#111; position:sticky; top:0; z-index:10; flex-wrap: wrap; }
+    #viewport { width:100%; height:calc(100% - 180px); }
+    input[type=range] { width:340px; }
+    button { background:#222; color:#eee; border:1px solid #333; padding:4px 10px; border-radius:6px; cursor:pointer; }
+    button:hover { background:#2a2a2a; }
+    .pill { padding:2px 8px; background:#1a1a1a; border:1px solid #333; border-radius:999px; }
+    #panel { display:flex; gap:24px; padding:10px 14px; background:#0c0c0c; border-top:1px solid #222; }
+    #legend { min-width:260px; }
+    #grad { width:240px; height:var(--bar-h); border-radius:6px; border:1px solid #333; display:block; margin:6px 0 4px 0; }
+    #ticks { display:flex; justify-content:space-between; font-size:12px; color:#ccc; }
+    table { border-collapse:collapse; font-size:13px; }
+    th, td { padding:4px 8px; border-bottom:1px solid #222; }
+    th { text-align:left; color:#bbb; }
+    .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    a, a:visited { color:#8ab4ff; text-decoration:none; }
+    .hint { color:#aaa; font-size:12px; }
+    .clickable { cursor:pointer; }
+    .clickable:hover { background:#1b1b1b; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div><strong>Frame:</strong> <span id="fval" class="pill mono">0</span></div>
+    <input id="slider" type="range" min="0" max="193" step="1" value="0"/>
+    <button id="play">▶︎</button>
+    <span class="pill">Color: B-factor (per-residue 0–100)</span>
+    <span class="hint">Change dataset with <span class="mono">?path=...&max=...&prefix=...</span></span>
+  </div>
+
+  <div id="viewport"></div>
+
+  <div id="panel">
+    <div id="legend">
+      <div><strong>Legend</strong></div>
+      <canvas id="grad"></canvas>
+      <div id="ticks"><span>0</span><span>100</span></div>
+      <div class="hint" style="max-width:360px">
+        Colors map to the PDB <em>tempFactor</em> (B-factor) written per residue. Scale fixed across frames.
+        Click a row to highlight and zoom to that residue.
+      </div>
+    </div>
+    <div id="topk">
+      <div style="display:flex;align-items:center;gap:8px">
+        <strong>Top residues in frame <span class="mono" id="kframe">0</span></strong>
+        <span class="pill">Top-<span id="ktop">10</span></span>
+      </div>
+      <table id="kTable">
+        <thead><tr><th>Rank</th><th>Residue</th><th class="mono">Score</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint">Residue score = mean B-factor of atoms in that residue (0–100).</div>
+    </div>
+  </div>
+
+  <script>
+    // ---- URL params (swap datasets without editing) ----
+    const q = new URLSearchParams(window.location.search);
+    const DATA_PATH = q.get("path")   || "/data/colored_frames_res";
+    const FILE_PREFIX = q.get("prefix") || "colored_res_";
+    const MAX_FRAME = parseInt(q.get("max") || "193", 10);
+
+    const COLOR_DOMAIN = [0, 100];
+    const COLOR_SCALE  = "rainbow";
+
+    // ---- NGL ----
+    const stage = new NGL.Stage("viewport", { backgroundColor: "black" });
+    let comp = null, playing = false, timer = null, highlightRep = null;
+
+    function framePath(i){
+      const num = String(i).padStart(5, "0");
+      return `${DATA_PATH}/${FILE_PREFIX}${num}.pdb`;
+    }
+
+    async function loadFrame(i){
+      document.getElementById("fval").textContent = i;
+      document.getElementById("kframe").textContent = i;
+
+      if (comp){ comp.dispose(); comp = null; highlightRep = null; }
+      const obj = await stage.loadFile(framePath(i));
+      comp = obj;
+      obj.addRepresentation("cartoon", {
+        colorScheme: "bfactor",
+        colorDomain: COLOR_DOMAIN,
+        colorScale: COLOR_SCALE
+      });
+      obj.autoView();
+      computeTopResidues(obj.structure, 10);
+    }
+
+    function computeTopResidues(structure, K){
+      const rows = [];
+      structure.eachResidue(function(res){
+        let sum = 0, n = 0;
+        res.eachAtom(a => { if (typeof a.bfactor === "number") { sum += a.bfactor; n += 1; } });
+        if (n > 0){
+          rows.push({
+            chainname: res.chainname || "",
+            chainIndex: res.chainIndex,
+            resno: res.resno,
+            resname: res.resname,
+            score: sum / n
+          });
+        }
+      });
+      rows.sort((a,b) => b.score - a.score);
+      const top = rows.slice(0, K);
+
+      const tbody = document.querySelector("#kTable tbody");
+      tbody.innerHTML = "";
+      top.forEach((r, idx) => {
+        const idText = (r.chainname ? r.chainname : r.chainIndex) + ":" + r.resno + " " + r.resname;
+        const tr = document.createElement("tr");
+        tr.className = "clickable";
+        tr.dataset.chainname = r.chainname;
+        tr.dataset.chainindex = r.chainIndex;
+        tr.dataset.resno = r.resno;
+        tr.innerHTML = `<td class="mono">${idx+1}</td><td>${idText}</td><td class="mono">${r.score.toFixed(2)}</td>`;
+        tr.addEventListener("click", () => highlightResidue(r));
+        tbody.appendChild(tr);
+      });
+      document.getElementById("ktop").textContent = K;
+    }
+
+    function highlightResidue(r){
+      if (!comp) return;
+      if (highlightRep){ comp.removeRepresentation(highlightRep); highlightRep = null; }
+      const sel = (r.chainname ? (":" + r.chainname) : ("/" + r.chainIndex)) + " and " + r.resno;
+      highlightRep = comp.addRepresentation("ball+stick", { sele: sel, color: "white", radiusScale: 2.0 });
+      comp.autoView(sel, 1000);
+    }
+
+    const slider = document.getElementById("slider");
+    slider.max = String(MAX_FRAME);
+    slider.addEventListener("input", e => loadFrame(parseInt(e.target.value, 10)));
+
+    document.getElementById("play").addEventListener("click", ()=>{
+      playing = !playing;
+      document.getElementById("play").textContent = playing ? "⏸" : "▶︎";
+      if (playing){
+        timer = setInterval(()=>{
+          let v = parseInt(slider.value, 10);
+          v = (v + 1) % (MAX_FRAME + 1);
+          slider.value = v;
+          loadFrame(v);
+        }, 250);
+      } else { clearInterval(timer); }
+    });
+
+    (function drawLegend(){
+      const canvas = document.getElementById("grad");
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width = 240;
+      const h = canvas.height = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 12;
+      const grd = ctx.createLinearGradient(0, 0, w, 0);
+      grd.addColorStop(0.00, "#313695");
+      grd.addColorStop(0.20, "#4575b4");
+      grd.addColorStop(0.40, "#74add1");
+      grd.addColorStop(0.50, "#abd9e9");
+      grd.addColorStop(0.60, "#e0f3f8");
+      grd.addColorStop(0.70, "#fee090");
+      grd.addColorStop(0.80, "#fdae61");
+      grd.addColorStop(0.90, "#f46d43");
+      grd.addColorStop(1.00, "#a50026");
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    })();
+
+    loadFrame(parseInt(slider.value, 10));
+    window.addEventListener("resize", () => stage.handleResize(), false);
+  </script>
+</body>
+</html>

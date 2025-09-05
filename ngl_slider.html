@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Anomaly Viewer (B-factor)</title>
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <style>
+    html, body { height:100%; margin:0; font-family: system-ui, -apple-system; }
+    #topbar { padding:8px 12px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #eee; }
+    #viewport { width:100%; height:calc(100% - 48px); }
+    input[type=range] { width:320px; }
+    .pill { padding:2px 8px; background:#f3f3f3; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div><strong>Frame:</strong> <span id="fval" class="pill">0</span></div>
+    <input id="slider" type="range" min="0" max="193" step="1" value="0"/>
+    <button id="play">▶︎</button>
+    <span class="pill">Color: B-factor (anomaly)</span>
+  </div>
+  <div id="viewport"></div>
+
+  <script>
+    const stage = new NGL.Stage("viewport");
+    let comp = null, playing = false, timer = null;
+
+    function framePath(i){
+      const num = String(i).padStart(5, "0");
+      return `/data/colored_frames_norm/colored_frame_${num}.pdb`;
+    }
+
+    async function loadFrame(i){
+      document.getElementById("fval").textContent = i;
+      if (comp){ comp.dispose(); comp = null; }
+      const o = await stage.loadFile(framePath(i));
+      comp = o;
+      o.addRepresentation("cartoon", {
+        colorScheme: "bfactor",
+        colorDomain: [0, 100]
+      });
+      o.autoView();
+    }
+
+    const slider = document.getElementById("slider");
+    slider.addEventListener("input", (e) => loadFrame(parseInt(e.target.value)));
+
+    document.getElementById("play").addEventListener("click", () => {
+      playing = !playing;
+      document.getElementById("play").textContent = playing ? "⏸" : "▶︎";
+      if (playing){
+        timer = setInterval(() => {
+          let v = parseInt(slider.value);
+          v = (v + 1) % (parseInt(slider.max) + 1);
+          slider.value = v;
+          loadFrame(v);
+        }, 250);
+      } else {
+        clearInterval(timer);
+      }
+    });
+
+    loadFrame(parseInt(slider.value));
+    window.addEventListener("resize", () => stage.handleResize(), false);
+  </script>
+</body>
+</html>
