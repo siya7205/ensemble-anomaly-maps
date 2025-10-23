@@ -65,9 +65,11 @@ ensemble-anomaly-maps/
 └── README.md
 
 ---
-\section*{Workflow Summary}
+---
 
-\begin{verbatim}
+## Workflow Summary
+
+```bash
 # 1. Generate geometric features
 python tools/generate_features.py
 
@@ -79,53 +81,3 @@ python tools/generate_hotspots.py
 
 # 4. Visualize trajectory interactively
 python viewer/app.py
-\end{verbatim}
-
-\noindent\rule{\textwidth}{0.4pt}
-
-\section*{Dependencies}
-
-\begin{center}
-\begin{tabular}{|p{4cm}|p{9cm}|}
-\hline
-\textbf{Category} & \textbf{Libraries} \\
-\hline
-Trajectory processing & MDAnalysis, numpy, pandas \\
-\hline
-Machine learning & scikit-learn, PyEMMA, deeptime \\
-\hline
-Visualization & pyvista, vtk, trame, trame-vtk, trame-vuetify \\
-\hline
-Utilities & json, threading, time, os, argparse \\
-\hline
-\end{tabular}
-\end{center}
-
-\noindent\rule{\textwidth}{0.4pt}
-
-\section*{Integration with Muskan’s Capstone}
-
-Muskan’s capstone provides a stable static PDB visualization frontend built on Flask, Trame, and VTK.  
-This project extends it by streaming MD trajectories instead of single structures and applying ML-derived per-frame anomaly coloring.
-
-\subsection*{Integration Goals}
-\begin{itemize}
-    \item Use this repository as the machine learning and data engine.
-    \item Integrate Muskan’s renderer as the visualization frontend.
-    \item Enable real-time playback and residue-level dynamic coloring for enhanced scientific visualization.
-\end{itemize}
-
-\noindent\rule{\textwidth}{0.4pt}
-
-\section*{Roadmap}
-
-\begin{itemize}
-    \item Implement trajectory feature extraction.
-    \item Integrate tICA for temporal decomposition.
-    \item Add anomaly-detection module.
-    \item Prototype Trame/VTK viewer.
-    \item Merge Muskan’s visualization frontend for stability.
-    \item Add color legend, residue selection, and metastable state overlays.
-    \item Export movie snapshots and analysis reports.
-\end{itemize}
-
