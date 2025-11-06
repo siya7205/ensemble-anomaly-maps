@@ -9,6 +9,7 @@ class MolecularViewer {
     
     this.atomMeshes = [];
     this.bondLines = null;
+    this.ribbonMesh = null;
     this.selectedAtomIndex = null;
     
     this.clippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
@@ -16,10 +17,13 @@ class MolecularViewer {
     
     this.metadata = null;
     this.residueMap = [];
+    this.residueTable = [];
     this.hotspotData = {};
     this.rmsfData = {};
     this.currentFrame = 0;
+    this.currentCoordinates = [];
     this.colorMode = 'hotspot';
+    this.vizMode = 'spheres';  // 'spheres', 'ball-stick', 'ribbon'
     
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
@@ -137,6 +141,14 @@ class MolecularViewer {
   }
 
   setupEventListeners() {
+    // Visualization mode
+    document.getElementById('vizMode').addEventListener('change', (e) => {
+      this.vizMode = e.target.value;
+      if (this.currentCoordinates.length > 0) {
+        this.renderMolecule(this.currentCoordinates);
+      }
+    });
+
     // Color mode
     document.getElementById('colorMode').addEventListener('change', (e) => {
       this.colorMode = e.target.value;
@@ -220,6 +232,11 @@ class MolecularViewer {
     const mapData = await mapResp.json();
     this.residueMap = mapData.resnums;
     
+    // Load residue table
+    const residuesResp = await fetch('/api/residues');
+    const residuesData = await residuesResp.json();
+    this.residueTable = residuesData.residues || [];
+    
     // Load hotspot data
     this.updateStatus('Loading hotspot data...');
     const hotspotResp = await fetch('/api/hotspots');
@@ -252,6 +269,9 @@ class MolecularViewer {
   }
 
   renderMolecule(coordinates) {
+    // Store coordinates for mode switching
+    this.currentCoordinates = coordinates;
+    
     // Clear existing meshes
     this.atomMeshes.forEach(mesh => this.scene.remove(mesh));
     this.atomMeshes = [];
@@ -261,7 +281,31 @@ class MolecularViewer {
       this.bondLines = null;
     }
     
-    // Create atoms
+    if (this.ribbonMesh) {
+      this.scene.remove(this.ribbonMesh);
+      this.ribbonMesh = null;
+    }
+    
+    // Render based on visualization mode
+    switch (this.vizMode) {
+      case 'ball-stick':
+        this.renderBallAndStick(coordinates);
+        break;
+      case 'ribbon':
+        this.renderRibbon(coordinates);
+        break;
+      case 'spheres':
+      default:
+        this.renderSpheres(coordinates);
+        break;
+    }
+    
+    // Update colors based on current mode
+    this.updateColors();
+  }
+  
+  renderSpheres(coordinates) {
+    // Original sphere rendering
     const atomGeometry = new THREE.SphereGeometry(0.3, 16, 16);
     
     coordinates.forEach((pos, idx) => {
@@ -277,12 +321,128 @@ class MolecularViewer {
       this.scene.add(mesh);
       this.atomMeshes.push(mesh);
     });
+  }
+  
+  renderBallAndStick(coordinates) {
+    // Smaller atoms + visible bonds
+    const atomGeometry = new THREE.SphereGeometry(0.2, 12, 12);
     
-    // Update colors based on current mode
-    this.updateColors();
+    coordinates.forEach((pos, idx) => {
+      const material = new THREE.MeshPhongMaterial({
+        color: 0xcccccc,
+        clippingPlanes: this.clippingEnabled ? [this.clippingPlane] : []
+      });
+      
+      const mesh = new THREE.Mesh(atomGeometry, material);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.userData = { atomIndex: idx };
+      
+      this.scene.add(mesh);
+      this.atomMeshes.push(mesh);
+    });
     
-    // Create bonds (simple approach: connect nearby atoms)
-    this.createBonds(coordinates);
+    // Create bonds with cylinders
+    this.createBondsCylinders(coordinates);
+  }
+  
+  renderRibbon(coordinates) {
+    // Create ribbon/cartoon representation using CA atoms
+    const caAtoms = this.getCAAtoms(coordinates);
+    
+    if (caAtoms.length < 2) {
+      // Fallback to spheres if not enough CA atoms
+      this.renderSpheres(coordinates);
+      return;
+    }
+    
+    // Create smooth curve through CA atoms
+    const points = caAtoms.map(atom => new THREE.Vector3(atom.pos[0], atom.pos[1], atom.pos[2]));
+    const curve = new THREE.CatmullRomCurve3(points);
+    
+    // Create tube geometry for ribbon
+    const tubeGeometry = new THREE.TubeGeometry(curve, caAtoms.length * 3, 0.8, 8, false);
+    const material = new THREE.MeshPhongMaterial({
+      color: 0x4488ff,
+      side: THREE.DoubleSide,
+      clippingPlanes: this.clippingEnabled ? [this.clippingPlane] : []
+    });
+    
+    this.ribbonMesh = new THREE.Mesh(tubeGeometry, material);
+    this.scene.add(this.ribbonMesh);
+    
+    // Also add small spheres for CA atoms to allow selection
+    const caGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+    caAtoms.forEach(atom => {
+      const mat = new THREE.MeshPhongMaterial({
+        color: 0xcccccc,
+        clippingPlanes: this.clippingEnabled ? [this.clippingPlane] : []
+      });
+      
+      const mesh = new THREE.Mesh(caGeometry, mat);
+      mesh.position.set(atom.pos[0], atom.pos[1], atom.pos[2]);
+      mesh.userData = { atomIndex: atom.index };
+      
+      this.scene.add(mesh);
+      this.atomMeshes.push(mesh);
+    });
+  }
+  
+  getCAAtoms(coordinates) {
+    // Extract CA (alpha carbon) atoms for ribbon
+    const caAtoms = [];
+    
+    // For each residue, find its CA atom
+    this.residueTable.forEach(res => {
+      // Find atoms belonging to this residue
+      coordinates.forEach((pos, idx) => {
+        if (this.residueMap[idx] === res.resid) {
+          // In a real implementation, we'd check atom name
+          // For now, approximate: take first atom of each residue as representative
+          if (!caAtoms.find(a => this.residueMap[a.index] === res.resid)) {
+            caAtoms.push({ index: idx, pos: pos, resid: res.resid });
+          }
+        }
+      });
+    });
+    
+    return caAtoms;
+  }
+  
+  createBondsCylinders(coordinates) {
+    // Create cylinders for bonds in ball-and-stick mode
+    const bondThreshold = 1.8;
+    const bondRadius = 0.08;
+    
+    for (let i = 0; i < coordinates.length; i++) {
+      for (let j = i + 1; j < Math.min(i + 5, coordinates.length); j++) {
+        const p1 = new THREE.Vector3(coordinates[i][0], coordinates[i][1], coordinates[i][2]);
+        const p2 = new THREE.Vector3(coordinates[j][0], coordinates[j][1], coordinates[j][2]);
+        const dist = p1.distanceTo(p2);
+        
+        if (dist < bondThreshold) {
+          const direction = new THREE.Vector3().subVectors(p2, p1);
+          const length = direction.length();
+          
+          const cylinderGeometry = new THREE.CylinderGeometry(bondRadius, bondRadius, length, 8);
+          const material = new THREE.MeshPhongMaterial({
+            color: 0x888888,
+            clippingPlanes: this.clippingEnabled ? [this.clippingPlane] : []
+          });
+          
+          const cylinder = new THREE.Mesh(cylinderGeometry, material);
+          
+          // Position and orient cylinder
+          cylinder.position.copy(p1).add(direction.multiplyScalar(0.5));
+          cylinder.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            direction.normalize()
+          );
+          
+          this.scene.add(cylinder);
+          // Note: Not adding to atomMeshes since these are bonds
+        }
+      }
+    }
   }
 
   createBonds(coordinates) {
@@ -318,8 +478,15 @@ class MolecularViewer {
   }
 
   updateColors() {
+    if (this.vizMode === 'ribbon' && this.ribbonMesh) {
+      // Color the ribbon based on average hotspot/RMSF
+      let color = this.getAverageColor();
+      this.ribbonMesh.material.color.setHex(color);
+    }
+    
     this.atomMeshes.forEach((mesh, idx) => {
-      const resid = this.residueMap[idx];
+      const atomIdx = mesh.userData.atomIndex;
+      const resid = this.residueMap[atomIdx];
       let color;
       
       switch (this.colorMode) {
@@ -333,7 +500,7 @@ class MolecularViewer {
           color = this.getResidueTypeColor(resid);
           break;
         case 'chain':
-          color = this.getChainColor(idx);
+          color = this.getChainColor(atomIdx);
           break;
         default:
           color = 0xcccccc;
@@ -341,6 +508,35 @@ class MolecularViewer {
       
       mesh.material.color.setHex(color);
     });
+  }
+  
+  getAverageColor() {
+    // Calculate average hotspot score for ribbon coloring
+    if (Object.keys(this.hotspotData).length === 0) {
+      return 0x4488ff; // Default blue
+    }
+    
+    let sum = 0;
+    let count = 0;
+    Object.values(this.hotspotData).forEach(data => {
+      if (data.score !== undefined) {
+        sum += data.score;
+        count++;
+      }
+    });
+    
+    if (count === 0) return 0x4488ff;
+    
+    const avg = sum / count;
+    const normalized = Math.min(Math.max(avg / 2.0, 0), 1); // Normalize to 0-1
+    
+    if (normalized < 0.5) {
+      const t = normalized * 2;
+      return this.interpolateColor(0x3b82f6, 0xffffff, t);
+    } else {
+      const t = (normalized - 0.5) * 2;
+      return this.interpolateColor(0xffffff, 0xef4444, t);
+    }
   }
 
   getHotspotColor(resid) {
@@ -410,6 +606,19 @@ class MolecularViewer {
       this.bondLines.material.clippingPlanes = this.clippingEnabled ? [this.clippingPlane] : [];
       this.bondLines.material.needsUpdate = true;
     }
+    
+    if (this.ribbonMesh) {
+      this.ribbonMesh.material.clippingPlanes = this.clippingEnabled ? [this.clippingPlane] : [];
+      this.ribbonMesh.material.needsUpdate = true;
+    }
+    
+    // Update all children for ball-and-stick bonds
+    this.scene.children.forEach(child => {
+      if (child.material && child.material.clippingPlanes !== undefined) {
+        child.material.clippingPlanes = this.clippingEnabled ? [this.clippingPlane] : [];
+        child.material.needsUpdate = true;
+      }
+    });
   }
 
   onAtomClick(event) {
