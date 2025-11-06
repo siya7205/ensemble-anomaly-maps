@@ -1,7 +1,12 @@
 # app/app.py (clean minimal)
 import os, pathlib, glob
-from flask import Flask, jsonify, send_file, render_template
+from flask import Flask, jsonify, send_file, render_template, request
 import pandas as pd
+
+try:
+    from app.data_loader import get_loader
+except ImportError:
+    from data_loader import get_loader
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / "outputs"
@@ -10,6 +15,9 @@ TEMPL = ROOT / "templates"
 DATA = ROOT / "data"
 
 app = Flask(__name__, static_folder=str(STATIC), template_folder=str(TEMPL))
+
+# Data loader for trajectory and analysis data
+loader = get_loader()
 
 # ---------- helpers ----------
 def _latest(pattern):
@@ -32,6 +40,11 @@ def home():
 def three():
     # 3D NGL viewer for data/multi_model_anomaly.pdb
     return render_template("three.html")
+
+@app.route("/interactive")
+def interactive():
+    # New interactive molecular viewer with slicing and selection
+    return render_template("interactive_viewer.html")
 
 # ---------- files ----------
 @app.route("/file/<path:relpath>")
@@ -124,6 +137,85 @@ def api_local_ops_top():
             return jsonify(path=str(src.relative_to(ROOT)), rows=out)
 
     return jsonify(error=f"No per-residue CSV found under {run}"), 404
+
+# ---------- NEW: Interactive Viewer APIs ----------
+@app.route("/api/trajectory/meta")
+def api_trajectory_meta():
+    """Get trajectory metadata (frames, atoms, residues)."""
+    try:
+        meta = loader.get_trajectory_meta()
+        return jsonify(meta)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/trajectory/frame/<int:frame_idx>")
+def api_trajectory_frame(frame_idx):
+    """Get atom coordinates for a specific frame."""
+    try:
+        data = loader.get_frame_coordinates(frame_idx)
+        return jsonify(data)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/trajectory/residue_map")
+def api_residue_map():
+    """Get mapping from atom index to residue number."""
+    try:
+        resnums = loader.get_residue_map()
+        return jsonify({"resnums": resnums})
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/residues")
+def api_residues():
+    """Get table of all residues with basic info."""
+    try:
+        residues = loader.get_residue_table()
+        return jsonify({"residues": residues})
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/residue/<int:resid>")
+def api_residue_details(resid):
+    """Get detailed information for a specific residue including hotspot and RMSF data."""
+    try:
+        details = loader.get_residue_details(resid)
+        if details is None:
+            return jsonify(error=f"Residue {resid} not found"), 404
+        return jsonify(details)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/atom/<int:atom_idx>")
+def api_atom_info(atom_idx):
+    """Get information about a specific atom."""
+    try:
+        info = loader.get_atom_info(atom_idx)
+        if info is None:
+            return jsonify(error=f"Atom {atom_idx} not found"), 404
+        return jsonify(info)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/hotspots")
+def api_hotspots():
+    """Get all residue hotspot scores."""
+    try:
+        hotspots = loader.load_hotspots()
+        return jsonify({"hotspots": hotspots})
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/rmsf")
+def api_rmsf():
+    """Get RMSF data for all residues."""
+    try:
+        rmsf = loader.load_rmsf()
+        return jsonify({"rmsf": rmsf})
+    except Exception as e:
+        return jsonify(error=str(e)), 500
 
 # ---------- main ----------
 if __name__ == "__main__":
