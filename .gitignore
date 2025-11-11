@@ -5,3 +5,10 @@ outputs/
 __pycache__/
 *.pyc
 
+# Cache files from optimization
+.cache/
+*.pkl
+
+# Performance reports
+performance_*.json
+
