@@ -69,6 +69,8 @@ ensemble-anomaly-maps/
 
 ## Workflow Summary
 
+### Basic Pipeline
+
 ```bash
 # 1. Generate geometric features
 python tools/generate_features.py
@@ -81,3 +83,25 @@ python tools/generate_hotspots.py
 
 # 4. Visualize trajectory interactively
 python viewer/app.py
+```
+
+### Enhanced Pipeline (Phase 1: Model Selection & Bootstrap)
+
+```bash
+# 1. Extract features (if not already done)
+# Features should be in data/features.npy
+
+# 2. Run Phase 1: VAMP-2 model selection + Bootstrap MSM
+python tools/run_phase1.py --features data/features.npy --output outputs/phase1
+
+# This will:
+#   - Select optimal TICA lag and dimensionality via VAMP-2
+#   - Compute bootstrap confidence intervals for MSM parameters
+#   - Save reproducible run configuration
+
+# 3. Use selected parameters in subsequent analysis
+# Best parameters saved in: outputs/phase1/reports/vamp2_best.json
+# Bootstrap CIs saved in: outputs/phase1/models/msm_bootstrap/
+
+# See PHASE1.md for detailed documentation
+```
