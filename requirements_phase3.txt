@@ -1,0 +1,11 @@
+# Phase 3 Additional Dependencies
+# Install with: pip install -r requirements_phase3.txt
+
+# Already have from Phase 1-2:
+# numpy, scipy, pandas, scikit-learn, deeptime, pyemma, pyyaml, pyarrow, mdtraj
+
+# HMM for soft states
+hmmlearn>=0.2.7
+
+# Additional scipy for signal processing
+# scipy>=1.7.0  # Already in Phase 1

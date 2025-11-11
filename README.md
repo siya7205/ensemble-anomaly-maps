@@ -129,3 +129,37 @@ python tools/generate_pockets.py \
 # Both tools support caching and custom parameters
 # See PHASE2.md for detailed documentation
 ```
+
+### Enhanced Pipeline (Phase 3: Multi-Signal Anomaly Scoring)
+
+```bash
+# 1. (Optional) Compute soft state assignments
+python tools/train_soft_states.py --dtraj outputs/msm/dtraj.npy
+
+# Outputs:
+#   data/derived/soft_dtraj.npy (probabilistic state assignments)
+#   data/derived/state_entropy.npy (per-frame entropy)
+
+# 2. Compute enhanced anomaly scores v2
+python tools/score_v2.py \
+    --features data/features.npy \
+    --msm_dir outputs/msm \
+    --energy data/derived/residue_energy.parquet \
+    --pockets data/derived/pockets.parquet \
+    --soft_dtraj data/derived/soft_dtraj.npy \
+    --state_entropy data/derived/state_entropy.npy
+
+# Outputs:
+#   data/derived/frame_scores_v2.csv (multi-signal fused scores)
+#   reports/scoring_v2_summary.json (metadata)
+
+# Fuses 6+ signals:
+#   - Kinetic: rarity, transition surprise
+#   - Structural: local density, soft entropy
+#   - Energetic: energy stress, pocket volatility
+#
+# Features rank/quantile normalization, median/mean fusion,
+# and windowed smoothing for robust anomaly detection.
+#
+# See PHASE3.md for detailed documentation
+```
