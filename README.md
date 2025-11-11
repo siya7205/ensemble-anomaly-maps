@@ -105,3 +105,27 @@ python tools/run_phase1.py --features data/features.npy --output outputs/phase1
 
 # See PHASE1.md for detailed documentation
 ```
+
+### Enhanced Pipeline (Phase 2: Feature Extensions)
+
+```bash
+# 1. Generate per-residue energetic features
+python tools/generate_energy.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory.xtc
+
+# Output: data/derived/residue_energy.parquet
+# Columns: frame, res_id, chain, energy, hbonds
+
+# 2. Generate pocket/cavity dynamics features  
+python tools/generate_pockets.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory.xtc
+
+# Outputs:
+#   data/derived/pockets.parquet (volume, mouth_radius, sasa_rim)
+#   data/derived/pocket_rims.parquet (residue-pocket mappings)
+
+# Both tools support caching and custom parameters
+# See PHASE2.md for detailed documentation
+```

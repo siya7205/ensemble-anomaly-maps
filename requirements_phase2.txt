@@ -1,0 +1,15 @@
+# Phase 2 Additional Dependencies
+# Install with: pip install -r requirements_phase2.txt
+
+# Already have from Phase 1:
+# numpy, scipy, pandas, scikit-learn, deeptime, pyemma, pyyaml, pyarrow
+
+# MD analysis (essential for Phase 2)
+mdtraj>=1.9.0
+
+# Spatial algorithms
+scipy>=1.7.0  # Already in Phase 1, but needed for spatial functions
+
+# Additional for future enhancements
+# biopython>=1.79  # For PDB parsing (optional)
+# networkx>=2.6  # For graph-based pocket analysis (optional)
