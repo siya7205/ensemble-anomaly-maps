@@ -10,11 +10,14 @@ Dynamic Hotspot Detection in Molecular Dynamics Trajectories Using Machine Learn
 Ensemble-Anomaly-Maps is a computational biology pipeline designed to detect and visualize dynamic structural anomalies in proteins.  
 It combines machine-learning-based motion analysis with interactive molecular visualization to identify regions (residues) that exhibit abnormal movements across molecular dynamics (MD) simulations.
 
-**📖 For comprehensive scientific documentation**, see [SCIENTIFIC_DOCUMENTATION.md](SCIENTIFIC_DOCUMENTATION.md) which explains:
-- What we're doing in the ML pipeline and why
-- The significance of hotspot scoring
-- What dynamic hotspots are and why they matter
-- Scientific rationale and validation methods
+**📖 Documentation:**
+- **[USAGE.md](USAGE.md)** - Complete usage guide for running the pipeline
+- **[PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md](PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md)** - Accessible scientific overview for non-CS researchers
+- **[SCIENTIFIC_DOCUMENTATION.md](SCIENTIFIC_DOCUMENTATION.md)** - Comprehensive technical and scientific documentation
+  - What we're doing in the ML pipeline and why
+  - The significance of hotspot scoring
+  - What dynamic hotspots are and why they matter
+  - Scientific rationale and validation methods
 
 ---
 
@@ -168,4 +171,38 @@ python tools/score_v2.py \
 # and windowed smoothing for robust anomaly detection.
 #
 # See PHASE3.md for detailed documentation
+```
+
+### **NEW: Unified Metrics Computation (Recommended)**
+
+```bash
+# Compute all three metric channels in one step:
+# 1. Dynamic anomaly scores (kinetic + structural signals)
+# 2. RMSF/stability scores (per-residue flexibility)
+# 3. tICA importance scores (slow-mode contribution)
+
+python tools/compute_all_metrics.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory_0.xtc \
+    --msm_dir outputs/msm \
+    --output_dir outputs/metrics \
+    --normalization percentile \
+    --low-percentile 0.05 \
+    --high-percentile 0.95
+
+# Outputs:
+#   outputs/metrics/hotspots_unified.json           # All metrics for viewer
+#   outputs/metrics/residue_scores_dynamic.json     # Dynamic anomaly only
+#   outputs/metrics/residue_scores_rmsf.json        # RMSF/stability only
+#   outputs/metrics/residue_scores_tica_importance.json  # tICA importance only
+#   outputs/metrics/frame_scores_dynamic.csv        # Per-frame timeseries
+#   outputs/metrics/hotspots_residue.json           # Legacy format
+
+# Key features:
+#   - Separate metric channels prevent conflation
+#   - Percentile normalization avoids "all blue with red tips"
+#   - Global vs per-frame normalization options
+#   - Backward compatible output formats
+#
+# See USAGE.md and PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md for details
 ```
