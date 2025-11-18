@@ -10,6 +10,12 @@ Dynamic Hotspot Detection in Molecular Dynamics Trajectories Using Machine Learn
 Ensemble-Anomaly-Maps is a computational biology pipeline designed to detect and visualize dynamic structural anomalies in proteins.  
 It combines machine-learning-based motion analysis with interactive molecular visualization to identify regions (residues) that exhibit abnormal movements across molecular dynamics (MD) simulations.
 
+**📖 For comprehensive scientific documentation**, see [SCIENTIFIC_DOCUMENTATION.md](SCIENTIFIC_DOCUMENTATION.md) which explains:
+- What we're doing in the ML pipeline and why
+- The significance of hotspot scoring
+- What dynamic hotspots are and why they matter
+- Scientific rationale and validation methods
+
 ---
 
 ## Pipeline Architecture
