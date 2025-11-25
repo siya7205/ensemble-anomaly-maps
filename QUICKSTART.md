@@ -213,6 +213,140 @@ python tools/run_msm_tica.py \
 
 ---
 
+## Integration with ASVS Visualization Tool
+
+If you're using the external **ASVS viewer** (https://github.com/chiranjibsur/asvs/tree/siya-integration), follow these steps to export and visualize your ML pipeline outputs:
+
+### STEP 5: Export for ASVS Viewer
+
+After running the ML pipeline (Steps 1-3), export the outputs in ASVS-compatible format:
+
+```bash
+# Run the export script to generate ASVS-compatible JSON files
+python tools/export_for_asvs.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory_0.xtc \
+    --msm_dir outputs/msm \
+    --metrics_dir outputs/metrics \
+    --output_dir /path/to/asvs/viewer
+```
+
+**Outputs for ASVS viewer:**
+- `hotspots_residue.json` - Per-residue, per-frame hotspot scores
+- `anomaly_residue.json` - Per-residue, per-frame anomaly scores  
+- `rmsf_residue.json` - Per-residue RMSF (flexibility) scores
+- `tica_importance.json` - Per-residue tICA importance scores
+
+### STEP 6: Launch ASVS Viewer
+
+```bash
+# Navigate to ASVS viewer directory
+cd /path/to/asvs
+
+# Copy your trajectory files to the viewer folder
+cp /path/to/ensemble-anomaly-maps/data/raw_trajectory/align_topol.pdb viewer/topology.pdb
+cp /path/to/ensemble-anomaly-maps/data/raw_trajectory/trajectory_0.xtc viewer/trajectory.xtc
+
+# Start the ASVS viewer
+python app.py
+```
+
+Then open in browser: **http://localhost:5000/viewer**
+
+### Alternative: Use Environment Variables
+
+```bash
+# Set paths to your ML pipeline outputs
+export ASVS_PDB="/path/to/ensemble-anomaly-maps/data/raw_trajectory/align_topol.pdb"
+export ASVS_XTC="/path/to/ensemble-anomaly-maps/data/raw_trajectory/trajectory_0.xtc"
+export ASVS_HOTSPOTS_RES="/path/to/ensemble-anomaly-maps/outputs/metrics/hotspots_residue.json"
+export ASVS_RMSF="/path/to/ensemble-anomaly-maps/outputs/metrics/rmsf_residue.json"
+export ASVS_TICA="/path/to/ensemble-anomaly-maps/outputs/metrics/tica_importance.json"
+export ASVS_ANOMALY="/path/to/ensemble-anomaly-maps/outputs/metrics/anomaly_residue.json"
+
+# Start ASVS viewer
+cd /path/to/asvs
+python app.py
+```
+
+### Complete Pipeline with ASVS Integration
+
+```bash
+# ====== ML PIPELINE (ensemble-anomaly-maps) ======
+cd /path/to/ensemble-anomaly-maps
+
+# Step 1: Create directories
+mkdir -p outputs/msm outputs/metrics
+
+# Step 2: Extract features
+python tools/extract_features.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory_0.xtc \
+    --output data/features.npy
+
+# Step 3: Build MSM + TICA model
+python tools/run_msm_tica.py \
+    --features data/features.npy \
+    --out_dir outputs/msm \
+    --lag_tica 10 \
+    --lag_msm 30 \
+    --n_clusters 30
+
+# Step 4: Compute unified metrics
+python tools/compute_all_metrics.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory_0.xtc \
+    --msm_dir outputs/msm \
+    --output_dir outputs/metrics
+
+# Step 5: Export for ASVS viewer
+python tools/export_for_asvs.py \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory_0.xtc \
+    --msm_dir outputs/msm \
+    --metrics_dir outputs/metrics \
+    --output_dir /path/to/asvs/viewer
+
+# ====== ASVS VIEWER ======
+cd /path/to/asvs
+
+# Copy trajectory files
+cp /path/to/ensemble-anomaly-maps/data/raw_trajectory/align_topol.pdb viewer/topology.pdb
+cp /path/to/ensemble-anomaly-maps/data/raw_trajectory/trajectory_0.xtc viewer/trajectory.xtc
+
+# Launch viewer
+python app.py
+# Open http://localhost:5000/viewer
+```
+
+### ASVS Output File Formats
+
+The ASVS viewer expects these specific JSON formats:
+
+**hotspots_residue.json / anomaly_residue.json** (per-frame, per-residue):
+```json
+{
+  "0": {"0": 0.05, "1": 0.10, "2": 0.00, ...},
+  "1": {"0": 0.03, "1": 0.12, "2": 0.01, ...},
+  ...
+}
+```
+- Keys are frame indices (as strings)
+- Values are dictionaries mapping residue index → score [0-1]
+
+**rmsf_residue.json / tica_importance.json** (static per-residue):
+```json
+{
+  "min": 0.45,
+  "max": 8.68,
+  "normalized": {"0": 0.05, "1": 0.04, "2": 0.03, ...}
+}
+```
+- `min`/`max`: Original value range
+- `normalized`: Scores normalized to [0-1] range
+
+---
+
 ## Summary of Key Files
 
 | File                                | Purpose                           |
@@ -220,11 +354,12 @@ python tools/run_msm_tica.py \
 | `tools/extract_features.py`         | Extract features from trajectory  |
 | `tools/run_msm_tica.py`             | Build tICA + MSM models           |
 | `tools/compute_all_metrics.py`      | Compute all hotspot metrics       |
+| `tools/export_for_asvs.py`          | Export outputs for ASVS viewer    |
 | `tools/run_phase1.py`               | VAMP-2 model selection            |
 | `tools/generate_energy.py`          | Energy features (Phase 2)         |
 | `tools/generate_pockets.py`         | Pocket features (Phase 2)         |
 | `tools/score_v2.py`                 | Enhanced scoring (Phase 3)        |
-| `app/app.py`                        | Visualization web server          |
+| `app/app.py`                        | Built-in visualization server     |
 
 ---
 
@@ -233,3 +368,4 @@ python tools/run_msm_tica.py \
 - See **[USAGE.md](USAGE.md)** for detailed parameter explanations
 - See **[PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md](PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md)** for scientific background
 - See **[PHASE1.md](PHASE1.md)**, **[PHASE2.md](PHASE2.md)**, **[PHASE3.md](PHASE3.md)** for advanced features
+- See **ASVS Repo**: https://github.com/chiranjibsur/asvs/tree/siya-integration for visualization tool docs
