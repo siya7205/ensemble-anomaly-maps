@@ -11,7 +11,8 @@ Ensemble-Anomaly-Maps is a computational biology pipeline designed to detect and
 It combines machine-learning-based motion analysis with interactive molecular visualization to identify regions (residues) that exhibit abnormal movements across molecular dynamics (MD) simulations.
 
 **📖 Documentation:**
-- **[USAGE.md](USAGE.md)** - Complete usage guide for running the pipeline
+- **[QUICKSTART.md](QUICKSTART.md)** - 🚀 **START HERE** - Step-by-step terminal commands to run the pipeline
+- **[USAGE.md](USAGE.md)** - Complete usage guide with detailed parameter explanations
 - **[PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md](PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md)** - Accessible scientific overview for non-CS researchers
 - **[SCIENTIFIC_DOCUMENTATION.md](SCIENTIFIC_DOCUMENTATION.md)** - Comprehensive technical and scientific documentation
   - What we're doing in the ML pipeline and why

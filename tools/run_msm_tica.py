@@ -3,20 +3,73 @@ import numpy as np
 import argparse
 from pathlib import Path
 import matplotlib.pyplot as plt
-import pyemma
 from sklearn.cluster import KMeans
 from deeptime.decomposition import TICA  # modern TICA
+from deeptime.markov.msm import MaximumLikelihoodMSM  # modern MSM
 
 # Import optimized utilities
 from utils import (
     minmax_normalize,
-    map_to_active_set,
     compute_transition_surprise,
     load_features_cached,
     compute_local_density,
     compute_frame_scores,
     ProgressBar
 )
+
+
+def estimate_transition_matrix(dtraj, lag, n_states=None, reversible=True):
+    """
+    Estimate transition matrix from discrete trajectory using deeptime.
+    
+    Args:
+        dtraj: Discrete trajectory (array of state indices)
+        lag: Lag time for MSM estimation
+        n_states: Number of states (if None, inferred from dtraj)
+        reversible: Whether to enforce detailed balance
+    
+    Returns:
+        P: Transition matrix
+        pi: Stationary distribution
+        active_set: Active states (in original cluster indices)
+        msm: The fitted MSM model
+    """
+    from deeptime.markov import TransitionCountEstimator
+    from deeptime.markov.msm import MaximumLikelihoodMSM
+    from deeptime.markov.tools.estimation import largest_connected_set
+    
+    # Count transitions
+    count_model = TransitionCountEstimator(lagtime=lag, count_mode='sliding').fit_fetch([dtraj])
+    
+    # Find the largest connected set
+    lcs = largest_connected_set(count_model.count_matrix)
+    
+    # Map back to original state indices
+    original_active_states = count_model.states[lcs]
+    
+    # Estimate MSM (it will use the connected submatrix internally)
+    msm = MaximumLikelihoodMSM(reversible=reversible).fit_fetch(count_model)
+    
+    return msm.transition_matrix, msm.stationary_distribution, original_active_states, msm
+
+
+def map_to_active_set(dtraj, active_set, n_clusters):
+    """
+    Vectorized mapping of cluster labels to active set indices.
+    
+    Args:
+        dtraj: Original discrete trajectory (cluster labels)
+        active_set: Active state indices from MSM
+        n_clusters: Total number of clusters
+    
+    Returns:
+        Mapped trajectory with -1 for inactive states
+    """
+    mapping = -np.ones(n_clusters, dtype=np.int64)
+    active_set = np.asarray(active_set, dtype=np.int64)
+    mapping[active_set] = np.arange(len(active_set))
+    return mapping[np.asarray(dtraj, dtype=np.int64)]
+
 
 def main(feat_path, out_dir, lag_tica, lag_msm, n_clusters, use_cache=True):
     out = Path(out_dir)
@@ -42,56 +95,62 @@ def main(feat_path, out_dir, lag_tica, lag_msm, n_clusters, use_cache=True):
     np.save(out / "dtraj.npy", dtraj)
     print(f"  Clustering complete: unique_labels={len(np.unique(dtraj))}")
 
-    # ---- MSM on largest connected set
+    # ---- MSM on largest connected set (using deeptime instead of pyemma)
     print(f"[4/7] Estimating MSM with lag={lag_msm}")
-    msm = pyemma.msm.estimate_markov_model(
-        [dtraj], lag=lag_msm, reversible=True, connectivity='largest'
-    )
-    np.save(out / "P.npy", msm.P)
-    np.save(out / "pi.npy", msm.pi)
-    print(f"  MSM complete: n_states={msm.n_states}, largest_eigenvalue={msm.timescales()[0]:.2f}")
+    P, pi, active_set, msm = estimate_transition_matrix(dtraj, lag_msm, n_clusters, reversible=True)
+    np.save(out / "P.npy", P)
+    np.save(out / "pi.npy", pi)
+    print(f"  MSM complete: n_states={len(active_set)}, timescales={msm.timescales()[:3]}")
 
-    # ---- Validation (best-effort plots)
+    # ---- Validation (simplified plots without pyemma)
     print("[5/7] Generating validation plots")
-    lags = np.unique(np.linspace(
-        max(1, lag_msm // 2),
-        min(len(dtraj) // 2, lag_msm * 5),
-        6,
-        dtype=int
-    ))
     try:
-        its = pyemma.msm.its([dtraj], lags=lags, errors='bayes')
-        plt.figure()
-        pyemma.plots.plot_implied_timescales(its)
-        plt.tight_layout()
-        plt.savefig(out / "its.png", dpi=180)
-        plt.close()
-        print("  ITS plot saved")
+        # Plot implied timescales
+        from deeptime.markov import TransitionCountEstimator
+        lags = np.unique(np.linspace(
+            max(1, lag_msm // 2),
+            min(len(dtraj) // 2, lag_msm * 5),
+            6,
+            dtype=int
+        ))
+        
+        timescales_list = []
+        for lag_test in lags:
+            try:
+                counts = TransitionCountEstimator(lagtime=lag_test, count_mode='sliding').fit_fetch([dtraj])
+                msm_test = MaximumLikelihoodMSM(reversible=True).fit_fetch(counts)
+                ts = msm_test.timescales()
+                timescales_list.append(ts[:min(5, len(ts))])
+            except Exception:
+                continue
+        
+        if timescales_list:
+            plt.figure(figsize=(8, 5))
+            timescales_arr = np.array([list(t) + [np.nan]*(5-len(t)) for t in timescales_list])
+            valid_lags = lags[:len(timescales_list)]
+            for i in range(min(5, timescales_arr.shape[1])):
+                plt.plot(valid_lags, timescales_arr[:, i], 'o-', label=f'ITS {i+1}')
+            plt.xlabel('Lag time')
+            plt.ylabel('Implied timescale')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(out / "its.png", dpi=180)
+            plt.close()
+            print("  ITS plot saved")
     except Exception as e:
         print(f"  [warn] ITS plotting failed: {e}")
 
-    try:
-        ck = msm.cktest(2)
-        pyemma.plots.plot_cktest(ck)
-        plt.legend(loc='upper center', ncol=2, frameon=False)
-        plt.tight_layout()
-        plt.savefig(out / "cktest.png", dpi=180)
-        plt.close()
-        print("  CK-test plot saved")
-    except Exception as e:
-        print(f"  [warn] CK plotting failed: {e}")
-
     # ---- Map labels to active-set indices (critical!)
     print("[6/7] Computing anomaly scores")
-    dmap = map_to_active_set(dtraj, msm.active_set, n_clusters)
+    dmap = map_to_active_set(dtraj, active_set, n_clusters)
     mask = dmap >= 0  # frames that live in the active set
 
     # ---- Scores: rarity
     rarity = np.ones(len(dtraj), dtype=np.float64)
-    rarity[mask] = 1.0 - msm.pi[dmap[mask]]
+    rarity[mask] = 1.0 - pi[dmap[mask]]
 
     # ---- Transition surprise (optimized vectorized version)
-    trans = compute_transition_surprise(dmap, msm.P, lag_msm, mask)
+    trans = compute_transition_surprise(dmap, P, lag_msm, mask)
 
     # ---- Local density (optimized with parallel k-NN)
     dens = compute_local_density(Y, n_neighbors=20)
