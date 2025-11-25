@@ -52,7 +52,7 @@ def residue_scores(win_row, pr):
         return None
     return dict(zip(sub['residue'].astype(int), sub['score'].astype(float)))
 
-def write_model(pdb_in, resid_to_b, out, model_number):
+def write_model(pdb_in, resid_to_b, out, model_number, default_b=0.0):
     out.write(f"MODEL     {model_number}\n")
     with open(pdb_in, "r") as f:
         for line in f:
@@ -61,7 +61,7 @@ def write_model(pdb_in, resid_to_b, out, model_number):
                     resid = int(line[22:26])
                 except Exception:
                     resid = None
-                bf = float(resid_to_b.get(resid, 0.0))
+                bf = float(resid_to_b.get(resid, default_b))
                 line = line[:60] + f"{bf:6.2f}" + line[66:]
             out.write(line)
     out.write("ENDMDL\n")
@@ -82,13 +82,22 @@ def main():
         for i, pdb in enumerate(frames):
             win = pick_window_for_frame(i, pw)
             res_b = residue_scores(win, pr)
-            resid_to_b = {int(r.resid): float(r.bf) for _, r in res_b.iterrows()}
+            
+            # Handle case when no per-residue data is available
+            if res_b is None:
+                # Use the window score as a uniform B-factor for all residues
+                uniform_score = float(win.get('score', 0.0))
+                resid_to_b = {}  # Will default to uniform_score via default in get()
+                default_b = uniform_score
+            else:
+                resid_to_b = res_b
+                default_b = 0.0
 
             single_out = os.path.join(args.out_dir, f"colored_{os.path.basename(pdb)}")
             with open(single_out, "w") as out:
-                write_model(pdb, resid_to_b, out, model_number=1)
+                write_model(pdb, resid_to_b, out, model_number=1, default_b=default_b)
 
-            write_model(pdb, resid_to_b, mm, model_number=i + 1)
+            write_model(pdb, resid_to_b, mm, model_number=i + 1, default_b=default_b)
 
     print("[OK] wrote:")
     print(" - colored frames:", args.out_dir)
