@@ -32,7 +32,8 @@ def fit_autoencoder(X, latent=16, hidden_factor=2, epochs=100, batch_size=32, se
     np.random.seed(seed)
     
     n_samples, n_features = X.shape
-    hidden_dim = max(latent * hidden_factor, n_features)
+    # Hidden dimension should be larger than both input and latent for encoding capacity
+    hidden_dim = max(n_features * hidden_factor, latent * hidden_factor)
     
     # Standardize input
     scaler = StandardScaler()
@@ -99,20 +100,20 @@ def fit_autoencoder(X, latent=16, hidden_factor=2, epochs=100, batch_size=32, se
             # Output layer gradient
             d_x_recon = 2 * (x_recon - X_batch) / bs
             
-            # Decoder layer 2
+            # Decoder layer 2: gradient flows back through W_dec2, then through ReLU
             d_W_dec2 = h2.T @ d_x_recon
             d_b_dec2 = d_x_recon.sum(axis=0)
-            d_h2 = d_x_recon @ W_dec2.T * relu_derivative(pre_h2)
+            d_h2 = (d_x_recon @ W_dec2.T) * relu_derivative(pre_h2)
             
             # Decoder layer 1
             d_W_dec1 = z.T @ d_h2
             d_b_dec1 = d_h2.sum(axis=0)
-            d_z = d_h2 @ W_dec1.T * relu_derivative(pre_z)
+            d_z = (d_h2 @ W_dec1.T) * relu_derivative(pre_z)
             
             # Encoder layer 2
             d_W_enc2 = h1.T @ d_z
             d_b_enc2 = d_z.sum(axis=0)
-            d_h1 = d_z @ W_enc2.T * relu_derivative(pre_h1)
+            d_h1 = (d_z @ W_enc2.T) * relu_derivative(pre_h1)
             
             # Encoder layer 1
             d_W_enc1 = X_batch.T @ d_h1

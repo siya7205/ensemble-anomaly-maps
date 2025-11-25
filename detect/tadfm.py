@@ -137,10 +137,12 @@ def compute_cluster_anomaly_scores(X, labels, distance_matrix):
         if label == -1:
             # Noise point - high anomaly score
             # Base score of 80, plus distance-based adjustment
-            nearest_clustered = np.min([
-                distance_matrix[i, j] 
-                for j in range(n_samples) if labels[j] >= 0
-            ]) if total_clustered > 0 else 1.0
+            if total_clustered > 0:
+                # Use boolean indexing for efficiency
+                clustered_mask = labels >= 0
+                nearest_clustered = distance_matrix[i, clustered_mask].min()
+            else:
+                nearest_clustered = 1.0
             scores[i] = min(100.0, 80.0 + nearest_clustered * 20.0)
         else:
             # Clustered point

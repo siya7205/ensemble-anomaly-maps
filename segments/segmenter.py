@@ -8,6 +8,9 @@ Provides methods to segment MD trajectories into windows:
 """
 import numpy as np
 
+# Numerical tolerance for zero vector detection
+NORM_TOLERANCE = 1e-12
+
 
 def fixed_windows(n_frames, win=250, overlap=50):
     """
@@ -70,8 +73,9 @@ def compute_turning_angles(X):
         norm1 = np.linalg.norm(v1)
         norm2 = np.linalg.norm(v2)
         
-        if norm1 < 1e-12 or norm2 < 1e-12:
-            angles[t - 1] = 180.0  # Straight line
+        if norm1 < NORM_TOLERANCE or norm2 < NORM_TOLERANCE:
+            # Zero vector: no movement, treat as not a boundary (high angle = straight)
+            angles[t - 1] = 180.0
             continue
         
         # Compute cosine of angle

@@ -54,7 +54,9 @@ def compute_features(topology_path, trajectory_path, stride=1, reference_frame=0
     try:
         _, phi = md.compute_phi(traj)
         _, psi = md.compute_psi(traj)
-    except Exception:
+    except (ValueError, RuntimeError, KeyError):
+        # ValueError: topology issues, RuntimeError: computation failures
+        # KeyError: missing atom types
         phi = np.zeros((n_frames, 1))
         psi = np.zeros((n_frames, 1))
     
