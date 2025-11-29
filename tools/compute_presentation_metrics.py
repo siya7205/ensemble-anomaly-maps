@@ -45,7 +45,6 @@ import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
 
 # Configure logging
 logging.basicConfig(
