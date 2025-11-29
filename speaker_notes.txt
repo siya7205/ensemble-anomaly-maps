@@ -1,0 +1,107 @@
+ENSEMBLE ANOMALY MAPS - SPEAKER NOTES
+============================================================
+Generated: 2025-11-29 15:01:14
+Commit: 7a90faa7ef6f
+============================================================
+
+--- Slide 1: Title ---
+Welcome to this presentation on Ensemble Anomaly Maps. This project applies machine learning to detect dynamic hotspots in molecular dynamics simulations, identifying residues with unusual or functionally important motions.
+
+--- Slide 2: Executive Summary ---
+This slide summarizes our key findings. We developed an ensemble anomaly detection pipeline that achieves excellent discrimination. The perfect AUROC indicates we may be working with a synthetic test set, so prospective validation on real data is critical.
+
+--- Slide 3: Outline ---
+Here is our roadmap for today's presentation. We'll cover the problem, our multi-stage pipeline, the results, and finish with a technical appendix for reproducibility.
+
+--- Slide 4: Problem Statement & Motivation ---
+We are tackling the problem of finding unusual conformations in molecular dynamics simulations. These rare states are often the most biologically interesting – they may correspond to catalytic intermediates, binding-competent states, or allosteric transitions.
+
+--- Slide 5: Desired Outputs for Chemists ---
+Our pipeline produces several outputs designed for chemical interpretation. Frame-level scores help prioritize which snapshots to examine. Residue-level hotspots guide mutagenesis experiments. The interactive viewer enables real-time exploration.
+
+--- Slide 6: High-Level Pipeline ---
+The pipeline has six main stages. We start with raw MD trajectories, extract geometric features, project to slow collective coordinates using tICA, build a Markov State Model for kinetics, compute multiple anomaly signals, and finally fuse them into a single score.
+
+--- Slide 7: Data & Preprocessing ---
+Our feature extraction starts with standard MD trajectory formats. We compute backbone dihedral angles, contact counts, RMSD and radius of gyration. Phase 2 adds energetic and pocket features. All features are cached for reproducibility.
+
+--- Slide 8: Temporal Reduction: tICA ---
+tICA is a dimensionality reduction method that, unlike PCA, focuses on slow motions rather than high-variance motions. We use VAMP-2 scoring to automatically select the optimal lag time and number of dimensions.
+
+--- Slide 9: Kinetics: Markov State Models ---
+We build a Markov State Model to capture kinetics. This gives us state populations (rare states have low π) and transition probabilities (unexpected transitions have high surprise). We validate with Chapman-Kolmogorov tests and bootstrap for uncertainty.
+
+--- Slide 10: Anomaly Signals ---
+We compute six complementary signals. Kinetic signals capture rare states and unexpected transitions. Structural signals detect isolated conformations. Energetic signals flag strained conformations. Each signal offers a different view of what makes a frame anomalous.
+
+--- Slide 11: Base Detectors & Ensemble ---
+We use an ensemble of diverse detectors. Autoencoders detect frames that are hard to reconstruct. Density methods flag isolated points. MSM signals capture kinetic rarities. The ensemble provides robustness: if multiple methods agree, we have higher confidence.
+
+--- Slide 12: Fusion, Smoothing & Thresholds ---
+This plot shows the distribution of fused anomaly scores. Red distribution is positives (anomalies), blue is negatives. The vertical lines mark our operational thresholds at top 1%, 5%, and 10%. Rank normalization ensures each signal contributes equally regardless of scale.
+
+--- Slide 13: Methods Reproducibility ---
+All our results are reproducible. We've fixed random seeds and documented exact commands. You can regenerate the metrics and figures by running the listed commands. The requirements file pins package versions.
+
+--- Slide 14: Numeric Results ---
+Here are the quantitative results. We achieved an AUROC of 1.000 with bootstrap 95% CI of 1.000–1.000. The precision at various thresholds shows strong performance across operating points.
+
+--- Slide 15: ROC Curve ---
+This ROC curve demonstrates near-perfect discrimination. The area under the curve approaches 1.0. However, this may indicate an overly easy test set, so we must validate on held-out prospective data.
+
+--- Slide 16: Precision-Recall Curve ---
+The precision-recall curve is more informative than ROC for imbalanced data. Here we see near-perfect precision maintained even at high recall, suggesting the model reliably identifies true anomalies.
+
+--- Slide 17: Top Residue Hotspots ---
+This table shows the top 10 residue hotspots ranked by mean anomaly score. Residues with high percentage of disallowed Ramachandran angles are in unusual backbone conformations that may be functionally important or indicate strain.
+
+--- Slide 18: Example Frames ---
+These three panels show representative frames from different score ranges. The normal frame is from the 5th percentile, the anomalous from the 95th, and the ambiguous from the median. In practice, you would examine the structure of high-scoring frames.
+
+--- Slide 19: Validation Plan ---
+Our validation uses bootstrap resampling for confidence intervals. We also plan grouped k-fold cross-validation and statistical tests to compare methods. The key is that overlapping confidence intervals indicate no significant difference between approaches.
+
+--- Slide 20: Ablations & Sensitivity ---
+We recommend these ablation studies to understand which components are most important. Removing MSM signals will tell us if kinetic information adds value. Single-detector runs establish baselines. Hyperparameter sweeps assess stability.
+
+--- Slide 21: Limitations & Biological Validation ---
+It's crucial to remember that our computational predictions are hypotheses. High anomaly scores suggest functional importance but require experimental confirmation. We recommend mutagenesis studies, NMR experiments, and comparison to known functional sites.
+
+--- Slide 22: Specific Ask & Timeline ---
+We're asking for approval of a 2-week pilot study. We need access to new trajectories that weren't used in training. Success criteria are AUROC at least 0.85 and confirmation that predicted hotspots overlap with known functional sites.
+
+--- Slide 23: References & Credits ---
+Our methods build on established work in dimensionality reduction, kinetic modeling, and anomaly detection. The full bibliography with BibTeX entries is in the technical appendix.
+
+--- Slide 24: Appendix Title ---
+The following slides contain detailed technical information for computational verification and reproducibility. They include mathematical derivations, pseudocode, hyperparameters, and full references.
+
+--- Slide 25: Appendix A1: tICA Mathematics ---
+
+
+--- Slide 26: Appendix A2: MSM Mathematics ---
+
+
+--- Slide 27: Appendix A3: Anomaly Signal Formulas ---
+
+
+--- Slide 28: Appendix A4: Autoencoder Architecture ---
+
+
+--- Slide 29: Appendix A5: Statistical Testing ---
+
+
+--- Slide 30: Appendix A6: Fusion & Calibration ---
+
+
+--- Slide 31: Appendix A7: Pipeline Pseudocode ---
+
+
+--- Slide 32: Appendix A8: Hyperparameters & Config ---
+
+
+--- Slide 33: Appendix A9: Data Provenance ---
+
+
+--- Slide 34: Appendix A10: Bibliography ---
+

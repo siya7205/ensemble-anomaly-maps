@@ -1,0 +1,218 @@
+{
+  "Slide 1: Title": {
+    "sources": [
+      "README.md"
+    ],
+    "description": "Title"
+  },
+  "Slide 2: Executive Summary": {
+    "sources": [
+      "outputs/summary/metrics_summary.csv"
+    ],
+    "description": "Executive Summary"
+  },
+  "Slide 3: Outline": {
+    "sources": [],
+    "description": "Outline"
+  },
+  "Slide 4: Problem Statement & Motivation": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md",
+      "PIPELINE_OVERVIEW.md"
+    ],
+    "description": "Problem Statement & Motivation"
+  },
+  "Slide 5: Desired Outputs for Chemists": {
+    "sources": [
+      "USAGE.md",
+      "viewer/"
+    ],
+    "description": "Desired Outputs for Chemists"
+  },
+  "Slide 6: High-Level Pipeline": {
+    "sources": [
+      "PIPELINE_OVERVIEW.md",
+      "tools/run_msm_tica.py",
+      "scoring/"
+    ],
+    "description": "High-Level Pipeline"
+  },
+  "Slide 7: Data & Preprocessing": {
+    "sources": [
+      "features/",
+      "configs/pipeline.yaml"
+    ],
+    "description": "Data & Preprocessing"
+  },
+  "Slide 8: Temporal Reduction: tICA": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md",
+      "msm/select_lag_and_dim.py"
+    ],
+    "description": "Temporal Reduction: tICA"
+  },
+  "Slide 9: Kinetics: Markov State Models": {
+    "sources": [
+      "msm/bootstrap_msm.py",
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Kinetics: Markov State Models"
+  },
+  "Slide 10: Anomaly Signals": {
+    "sources": [
+      "scoring/signals.py",
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Anomaly Signals"
+  },
+  "Slide 11: Base Detectors & Ensemble": {
+    "sources": [
+      "scoring/",
+      "models/",
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Base Detectors & Ensemble"
+  },
+  "Slide 12: Fusion, Smoothing & Thresholds": {
+    "sources": [
+      "outputs/summary/score_distributions.png",
+      "scoring/anomaly_v2.py"
+    ],
+    "description": "Fusion, Smoothing & Thresholds"
+  },
+  "Slide 13: Methods Reproducibility": {
+    "sources": [
+      "tools/compute_presentation_metrics.py",
+      "requirements_metrics.txt",
+      "configs/pipeline.yaml"
+    ],
+    "description": "Methods Reproducibility"
+  },
+  "Slide 14: Numeric Results": {
+    "sources": [
+      "outputs/summary/metrics_summary.csv"
+    ],
+    "description": "Numeric Results"
+  },
+  "Slide 15: ROC Curve": {
+    "sources": [
+      "outputs/summary/predictions_roc.png",
+      "outputs/summary/metrics_summary.csv"
+    ],
+    "description": "ROC Curve"
+  },
+  "Slide 16: Precision-Recall Curve": {
+    "sources": [
+      "outputs/summary/predictions_pr.png",
+      "outputs/summary/metrics_summary.csv"
+    ],
+    "description": "Precision-Recall Curve"
+  },
+  "Slide 17: Top Residue Hotspots": {
+    "sources": [
+      "outputs/summary/latest_rollup.csv"
+    ],
+    "description": "Top Residue Hotspots"
+  },
+  "Slide 18: Example Frames": {
+    "sources": [
+      "outputs/summary/example_frames_panel.png",
+      "tools/export_example_frames.py"
+    ],
+    "description": "Example Frames"
+  },
+  "Slide 19: Validation Plan": {
+    "sources": [
+      "tools/compute_presentation_metrics.py",
+      "msm/bootstrap_msm.py"
+    ],
+    "description": "Validation Plan"
+  },
+  "Slide 20: Ablations & Sensitivity": {
+    "sources": [
+      "configs/pipeline.yaml"
+    ],
+    "description": "Ablations & Sensitivity"
+  },
+  "Slide 21: Limitations & Biological Validation": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Limitations & Biological Validation"
+  },
+  "Slide 22: Specific Ask & Timeline": {
+    "sources": [],
+    "description": "Specific Ask & Timeline"
+  },
+  "Slide 23: References & Credits": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "References & Credits"
+  },
+  "Slide 24: Appendix Title": {
+    "sources": [],
+    "description": "Appendix Title"
+  },
+  "Slide 25: Appendix A1: tICA Mathematics": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Appendix A1: tICA Mathematics"
+  },
+  "Slide 26: Appendix A2: MSM Mathematics": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Appendix A2: MSM Mathematics"
+  },
+  "Slide 27: Appendix A3: Anomaly Signal Formulas": {
+    "sources": [
+      "scoring/signals.py"
+    ],
+    "description": "Appendix A3: Anomaly Signal Formulas"
+  },
+  "Slide 28: Appendix A4: Autoencoder Architecture": {
+    "sources": [
+      "models/"
+    ],
+    "description": "Appendix A4: Autoencoder Architecture"
+  },
+  "Slide 29: Appendix A5: Statistical Testing": {
+    "sources": [
+      "tools/compute_presentation_metrics.py"
+    ],
+    "description": "Appendix A5: Statistical Testing"
+  },
+  "Slide 30: Appendix A6: Fusion & Calibration": {
+    "sources": [
+      "scoring/anomaly_v2.py"
+    ],
+    "description": "Appendix A6: Fusion & Calibration"
+  },
+  "Slide 31: Appendix A7: Pipeline Pseudocode": {
+    "sources": [
+      "PIPELINE_OVERVIEW.md",
+      "tools/run_msm_tica.py"
+    ],
+    "description": "Appendix A7: Pipeline Pseudocode"
+  },
+  "Slide 32: Appendix A8: Hyperparameters & Config": {
+    "sources": [
+      "configs/pipeline.yaml"
+    ],
+    "description": "Appendix A8: Hyperparameters & Config"
+  },
+  "Slide 33: Appendix A9: Data Provenance": {
+    "sources": [
+      "tools/compute_presentation_metrics.py"
+    ],
+    "description": "Appendix A9: Data Provenance"
+  },
+  "Slide 34: Appendix A10: Bibliography": {
+    "sources": [
+      "SCIENTIFIC_DOCUMENTATION.md"
+    ],
+    "description": "Appendix A10: Bibliography"
+  }
+}

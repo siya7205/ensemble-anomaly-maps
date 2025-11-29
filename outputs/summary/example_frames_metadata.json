@@ -1,0 +1,18 @@
+{
+  "frames": {
+    "normal": {
+      "frame_id": 45,
+      "score": 0.1208899868697227
+    },
+    "anomalous": {
+      "frame_id": 2,
+      "score": 0.9759288950881869
+    },
+    "ambiguous": {
+      "frame_id": 36,
+      "score": 0.8553358143639386
+    }
+  },
+  "score_column": "if_score",
+  "n_frames_total": 75
+}
