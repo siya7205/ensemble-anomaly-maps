@@ -1,0 +1,17 @@
+# Metrics and presentation generation dependencies
+# Install with: pip install -r requirements_metrics.txt
+
+# Core scientific computing (may already be installed)
+numpy>=1.20.0
+pandas>=1.3.0
+scipy>=1.7.0
+
+# Machine learning metrics
+scikit-learn>=1.0.0
+
+# Visualization
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Data formats
+pyarrow>=6.0.0  # For parquet support

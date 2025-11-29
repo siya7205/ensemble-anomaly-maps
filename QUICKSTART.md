@@ -347,6 +347,63 @@ The ASVS viewer expects these specific JSON formats:
 
 ---
 
+## Evaluation Metrics and Presentation
+
+After running your anomaly detection pipeline, you can compute evaluation metrics (AUROC, AUPRC with 95% CIs) and generate presentation-ready figures:
+
+### Compute Evaluation Metrics
+
+```bash
+# Auto-detect predictions from outputs/ and compute metrics
+python tools/compute_presentation_metrics.py
+
+# Using specific predictions file
+python tools/compute_presentation_metrics.py \
+    --predictions outputs/frame_scores.csv \
+    --out-dir outputs/summary \
+    --bootstrap 2000 \
+    --seed 42
+
+# Quick test with sample data
+python tools/compute_presentation_metrics.py \
+    --predictions tests/sample_predictions.csv \
+    --out-dir outputs/test_metrics \
+    --bootstrap 500
+```
+
+**Required input format (CSV or Parquet):**
+- `frame`: Frame index
+- `y_true`: Ground truth label (0 = normal, 1 = anomaly)
+- `y_score`: Anomaly score from model
+- `run_id` (optional): Identifier for different runs/methods
+
+**Outputs:**
+- `outputs/summary/metrics_summary.csv` - All evaluation metrics
+- `outputs/summary/predictions_roc.png` - ROC curve with AUROC
+- `outputs/summary/predictions_pr.png` - Precision-Recall curve with AUPRC
+- `outputs/summary/score_distributions.png` - Score distributions with thresholds
+- `outputs/summary/metrics_summary_per_run.csv` - Per-run metrics (if run_id present)
+
+### Update Presentation with Figures
+
+The Beamer presentation `presentation_populated.tex` is configured to include the generated figures. After running the metrics script:
+
+1. Compile the LaTeX presentation:
+```bash
+pdflatex presentation_populated.tex
+```
+
+2. The presentation will automatically include:
+   - ROC curve with AUROC and 95% CI
+   - Precision-Recall curve with AUPRC and 95% CI
+   - Score distribution plots with top-k thresholds
+
+### Interpretation Demo
+
+See `notebooks/compute_metrics_demo.ipynb` for an interactive demonstration of the metrics computation and interpretation guidelines for chemists.
+
+---
+
 ## Summary of Key Files
 
 | File                                | Purpose                           |
@@ -354,12 +411,15 @@ The ASVS viewer expects these specific JSON formats:
 | `tools/extract_features.py`         | Extract features from trajectory  |
 | `tools/run_msm_tica.py`             | Build tICA + MSM models           |
 | `tools/compute_all_metrics.py`      | Compute all hotspot metrics       |
+| `tools/compute_presentation_metrics.py` | Evaluation metrics & plots    |
 | `tools/export_for_asvs.py`          | Export outputs for ASVS viewer    |
 | `tools/run_phase1.py`               | VAMP-2 model selection            |
 | `tools/generate_energy.py`          | Energy features (Phase 2)         |
 | `tools/generate_pockets.py`         | Pocket features (Phase 2)         |
 | `tools/score_v2.py`                 | Enhanced scoring (Phase 3)        |
 | `app/app.py`                        | Built-in visualization server     |
+| `presentation_populated.tex`        | Beamer presentation template      |
+| `notebooks/compute_metrics_demo.ipynb` | Metrics interpretation demo   |
 
 ---
 
