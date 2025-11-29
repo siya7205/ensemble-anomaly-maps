@@ -559,6 +559,36 @@ Output:
 | tICA lag | 5 frames | 10-50 frames | Must be < trajectory length / 10 |
 | MSM lag | 10 frames | 20-50 frames | Must satisfy Markov property |
 
+### Automatic Scalability (Auto-Optimization)
+
+The pipeline automatically optimizes parameters based on trajectory size:
+
+| Trajectory Size | Optimization Applied |
+|-----------------|---------------------|
+| < 500 frames | Conservative k=5-25, short lag times |
+| 500 - 10K frames | Standard processing |
+| 10K - 50K frames | Increased k=30+, longer lags for better statistics |
+| 50K - 200K frames | Optimized k=50-100, efficient ball_tree algorithm |
+| > 200K frames | **Subsampling for k-NN** (fits on 50K subsample, queries all points) |
+
+**Performance characteristics:**
+- State rarity: O(n) - vectorized
+- Transition surprise: O(n) - vectorized  
+- Local density (k-NN):
+  - Standard: O(n log n) with ball_tree algorithm
+  - Large trajectories (>200K): O(n × 50K) with subsampling
+
+**Disable auto-optimization** if you want manual control:
+```bash
+python tools/compute_all_metrics.py \
+    --topology topology.pdb \
+    --trajectory trajectory.xtc \
+    --msm_dir outputs/msm \
+    --no-auto-optimize \
+    --k_neighbors 100 \
+    --lag_msm 100
+```
+
 ### Known Limitations
 
 1. **Very short trajectories (< 100 frames)**

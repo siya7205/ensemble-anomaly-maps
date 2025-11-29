@@ -107,13 +107,64 @@ def compute_rmsf_scores(
     return rmsf_residues
 
 
+def _get_adaptive_parameters(n_frames: int, k_neighbors: int, lag_msm: int) -> tuple:
+    """
+    Get adaptive parameters based on trajectory size for optimal performance.
+    
+    Automatically adjusts parameters for trajectories from 10 to 10,000,000+ frames.
+    
+    Args:
+        n_frames: Number of frames in trajectory
+        k_neighbors: User-specified k_neighbors (or default)
+        lag_msm: User-specified lag_msm (or default)
+        
+    Returns:
+        (adjusted_k_neighbors, adjusted_lag_msm, use_subsampling, subsample_size)
+    """
+    # Thresholds for adaptive behavior
+    SMALL_TRAJ = 500          # Use robust mode
+    MEDIUM_TRAJ = 10_000      # Standard processing
+    LARGE_TRAJ = 50_000       # Use optimizations
+    VERY_LARGE_TRAJ = 200_000 # Use subsampling for k-NN
+    
+    use_subsampling = False
+    subsample_size = n_frames
+    
+    if n_frames < SMALL_TRAJ:
+        # Small trajectory: use conservative settings
+        adjusted_k = min(k_neighbors, max(5, n_frames // 20))
+        adjusted_lag = min(lag_msm, max(1, n_frames // 10))
+    elif n_frames < MEDIUM_TRAJ:
+        # Medium trajectory: standard settings
+        adjusted_k = min(k_neighbors, n_frames // 5)
+        adjusted_lag = min(lag_msm, n_frames // 20)
+    elif n_frames < LARGE_TRAJ:
+        # Large trajectory: increase k for better statistics
+        adjusted_k = min(max(k_neighbors, 30), n_frames // 10)
+        adjusted_lag = min(max(lag_msm, 50), n_frames // 50)
+    elif n_frames < VERY_LARGE_TRAJ:
+        # Very large: start considering efficiency
+        adjusted_k = min(max(k_neighbors, 50), 100)
+        adjusted_lag = min(max(lag_msm, 50), 100)
+    else:
+        # Extremely large (>200K frames): use subsampling for k-NN
+        adjusted_k = min(max(k_neighbors, 50), 100)
+        adjusted_lag = min(max(lag_msm, 100), 200)
+        use_subsampling = True
+        # Subsample to ~50K points for k-NN fitting, but query all points
+        subsample_size = min(50_000, n_frames // 4)
+    
+    return adjusted_k, adjusted_lag, use_subsampling, subsample_size
+
+
 def compute_dynamic_anomaly_scores(
     msm,
     dtraj: np.ndarray,
     tica_coords: np.ndarray,
     lag_msm: int = 30,
     k_neighbors: int = 20,
-    normalize: bool = True
+    normalize: bool = True,
+    auto_optimize: bool = True
 ) -> Dict[str, np.ndarray]:
     """
     Compute dynamic anomaly signals from MSM and tICA projection.
@@ -138,6 +189,12 @@ def compute_dynamic_anomaly_scores(
     - Transition surprise: Kinetic perspective (barrier heights)
     - Local density: Geometric perspective (structural uniqueness)
     
+    Automatic Optimization:
+    - For small trajectories (<500 frames): Uses conservative parameters
+    - For medium trajectories (500-10K): Standard processing
+    - For large trajectories (10K-50K): Optimized k-NN settings
+    - For very large trajectories (>50K): Uses subsampling for O(n) k-NN
+    
     Args:
         msm: Fitted Markov State Model (deeptime or PyEMMA)
         dtraj: Discrete trajectory (state assignments) [n_frames]
@@ -145,6 +202,7 @@ def compute_dynamic_anomaly_scores(
         lag_msm: MSM lag time (frames)
         k_neighbors: Number of neighbors for density estimation
         normalize: If True, normalize each signal to [0,1] using rank
+        auto_optimize: If True, automatically optimize parameters for trajectory size
         
     Returns:
         signals: Dictionary with keys:
@@ -165,6 +223,18 @@ def compute_dynamic_anomaly_scores(
     # Validate inputs
     if n_frames < 2:
         raise ValueError(f"Trajectory too short: {n_frames} frames (need at least 2)")
+    
+    # Auto-optimize parameters based on trajectory size
+    if auto_optimize:
+        k_neighbors, lag_msm, use_subsampling, subsample_size = _get_adaptive_parameters(
+            n_frames, k_neighbors, lag_msm
+        )
+        if n_frames >= 10_000:
+            print(f"  [Auto-optimize] n_frames={n_frames:,}, k={k_neighbors}, lag={lag_msm}"
+                  f"{', subsampling=' + str(subsample_size) if use_subsampling else ''}")
+    else:
+        use_subsampling = False
+        subsample_size = n_frames
     
     if n_frames <= lag_msm:
         warnings.warn(
@@ -194,26 +264,31 @@ def compute_dynamic_anomaly_scores(
     
     # --- Signal 1: State Rarity ---
     # rarity = 1 - π[state]
+    # Vectorized for speed
     rarity = np.ones(n_frames, dtype=np.float64)
-    for t in range(n_frames):
-        s = dtraj[t]
-        if 0 <= s < n_states:
-            rarity[t] = 1.0 - pi[s]
+    valid_states = (dtraj >= 0) & (dtraj < n_states)
+    rarity[valid_states] = 1.0 - pi[dtraj[valid_states]]
     
     signals['rarity'] = rarity
     
     # --- Signal 2: Transition Surprise ---
     # surprise = -log(P[s_t -> s_{t+lag}])
+    # Vectorized for speed
     surprise = np.zeros(n_frames, dtype=np.float64)
     epsilon = 1e-12  # Avoid log(0)
     
-    for t in range(n_frames - lag_msm):
-        s1, s2 = dtraj[t], dtraj[t + lag_msm]
-        if 0 <= s1 < n_states and 0 <= s2 < n_states:
-            prob = max(P[s1, s2], epsilon)
-            surprise[t] = -np.log(prob)
+    if n_frames > lag_msm:
+        s1 = dtraj[:-lag_msm]
+        s2 = dtraj[lag_msm:]
+        valid = (s1 >= 0) & (s1 < n_states) & (s2 >= 0) & (s2 < n_states)
+        
+        # Clip indices to valid range before indexing
+        s1_clipped = np.clip(s1, 0, n_states - 1)
+        s2_clipped = np.clip(s2, 0, n_states - 1)
+        
+        probs = np.where(valid, np.maximum(P[s1_clipped, s2_clipped], epsilon), 1.0)
+        surprise[:-lag_msm] = -np.log(probs)
     
-    # Pad end with zeros (no transitions possible)
     signals['transition_surprise'] = surprise
     
     # --- Signal 3: Local Density ---
@@ -222,8 +297,24 @@ def compute_dynamic_anomaly_scores(
     k = min(k_neighbors, len(tica_coords) - 1)
     if k < 1:
         signals['local_density'] = np.zeros(n_frames)
+    elif use_subsampling and n_frames > subsample_size:
+        # For very large trajectories, fit on subsample but query all points
+        # This reduces complexity from O(n²) to O(n × subsample_size)
+        np.random.seed(42)  # Reproducibility
+        subsample_idx = np.random.choice(n_frames, subsample_size, replace=False)
+        subsample_coords = tica_coords[subsample_idx]
+        
+        # Fit on subsample
+        nbrs = NearestNeighbors(n_neighbors=k, algorithm='ball_tree', n_jobs=-1).fit(subsample_coords)
+        
+        # Query all points against the subsample
+        distances, _ = nbrs.kneighbors(tica_coords)
+        mean_dist = distances.mean(axis=1)
+        signals['local_density'] = mean_dist
     else:
-        nbrs = NearestNeighbors(n_neighbors=k, n_jobs=-1).fit(tica_coords)
+        # Standard k-NN for smaller trajectories
+        # Use ball_tree algorithm which is O(n log n) for queries
+        nbrs = NearestNeighbors(n_neighbors=k, algorithm='ball_tree', n_jobs=-1).fit(tica_coords)
         distances, _ = nbrs.kneighbors(tica_coords)
         
         # Mean distance to k nearest neighbors

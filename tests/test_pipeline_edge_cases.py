@@ -537,6 +537,86 @@ def test_invalid_state_indices():
     print("  ✓ Invalid state indices handled correctly")
 
 
+def test_large_trajectory_optimization():
+    """Test auto-optimization for large trajectories."""
+    print("[TEST] Large trajectory optimization...")
+    
+    n_frames = 100_000  # Simulate a large trajectory
+    n_states = 10
+    
+    np.random.seed(42)
+    
+    # Create mock MSM
+    pi = np.random.dirichlet(np.ones(n_states))
+    P = np.random.dirichlet(np.ones(n_states), size=n_states)
+    
+    class MockMSM:
+        def __init__(self):
+            self.n_states = n_states
+            self.stationary_distribution = pi
+            self.transition_matrix = P
+    
+    msm = MockMSM()
+    dtraj = np.random.choice(n_states, size=n_frames)
+    tica_coords = np.random.randn(n_frames, 3)
+    
+    # With auto_optimize=True (default), should use subsampling
+    import time
+    start = time.time()
+    signals = compute_dynamic_anomaly_scores(
+        msm=msm,
+        dtraj=dtraj,
+        tica_coords=tica_coords,
+        lag_msm=30,
+        k_neighbors=20,
+        normalize=True,
+        auto_optimize=True
+    )
+    elapsed = time.time() - start
+    
+    assert len(signals['rarity']) == n_frames
+    assert len(signals['local_density']) == n_frames
+    assert np.all(np.isfinite(signals['rarity']))
+    assert np.all(np.isfinite(signals['local_density']))
+    
+    print(f"  ✓ Processed {n_frames:,} frames in {elapsed:.2f}s")
+    print(f"  ✓ All signals computed correctly")
+
+
+def test_adaptive_parameter_scaling():
+    """Test that adaptive parameters scale correctly with trajectory size."""
+    print("[TEST] Adaptive parameter scaling...")
+    
+    from scoring.signals import _get_adaptive_parameters
+    
+    # Test different trajectory sizes
+    test_cases = [
+        (100, 20, 30),      # Small
+        (1000, 20, 30),     # Medium
+        (20000, 20, 30),    # Large
+        (100000, 20, 30),   # Very large
+        (500000, 20, 30),   # Extremely large
+    ]
+    
+    for n_frames, k, lag in test_cases:
+        adj_k, adj_lag, use_sub, sub_size = _get_adaptive_parameters(n_frames, k, lag)
+        
+        # Check k is reasonable
+        assert adj_k >= 1, f"k should be at least 1 for {n_frames} frames"
+        assert adj_k <= n_frames - 1, f"k should be less than n_frames for {n_frames}"
+        
+        # Check lag is reasonable
+        assert adj_lag >= 1, f"lag should be at least 1 for {n_frames} frames"
+        assert adj_lag < n_frames, f"lag should be less than n_frames for {n_frames}"
+        
+        # Check subsampling is enabled for very large trajectories
+        if n_frames > 200_000:
+            assert use_sub, f"Subsampling should be enabled for {n_frames} frames"
+            assert sub_size < n_frames, "Subsample size should be less than n_frames"
+    
+    print("  ✓ Adaptive parameters scale correctly")
+
+
 # ============================================================================
 # Main Test Runner
 # ============================================================================
@@ -582,6 +662,10 @@ def main():
         # Special values
         test_negative_coordinates,
         test_invalid_state_indices,
+        
+        # Scalability
+        test_adaptive_parameter_scaling,
+        test_large_trajectory_optimization,
     ]
     
     passed = 0

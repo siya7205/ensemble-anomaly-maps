@@ -208,6 +208,11 @@ Output Files:
                        help='Enable robust mode for challenging trajectories. '
                             'Uses conservative parameters and graceful degradation.')
     
+    # Auto-optimization (on by default)
+    parser.add_argument('--no-auto-optimize', action='store_true',
+                       help='Disable automatic parameter optimization based on trajectory size. '
+                            'By default, parameters are auto-tuned for optimal performance.')
+    
     args = parser.parse_args()
     
     # Apply robust mode settings if enabled
@@ -260,13 +265,19 @@ Output Files:
     print("  - Transition surprise (kinetic)")
     print("  - Local density (structural)")
     
+    # Auto-optimization is enabled by default (unless --no-auto-optimize is set)
+    auto_optimize = not args.no_auto_optimize
+    if auto_optimize and n_frames >= 10_000:
+        print(f"  [Auto-optimization enabled for {n_frames:,} frames]")
+    
     signals = compute_dynamic_anomaly_scores(
         msm=msm,
         dtraj=dtraj,
         tica_coords=tica_coords,
         lag_msm=args.lag_msm,
         k_neighbors=args.k_neighbors,
-        normalize=True  # Pre-normalize individual signals
+        normalize=True,  # Pre-normalize individual signals
+        auto_optimize=auto_optimize
     )
     
     # Fuse signals
