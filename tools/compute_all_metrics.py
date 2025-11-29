@@ -203,7 +203,37 @@ Output Files:
     parser.add_argument('--fusion', choices=['median', 'mean'], default='median',
                        help='Signal fusion method (default: median)')
     
+    # Robust mode
+    parser.add_argument('--robust', action='store_true',
+                       help='Enable robust mode for challenging trajectories. '
+                            'Uses conservative parameters and graceful degradation.')
+    
+    # Auto-optimization (on by default)
+    parser.add_argument('--no-auto-optimize', action='store_true',
+                       help='Disable automatic parameter optimization based on trajectory size. '
+                            'By default, parameters are auto-tuned for optimal performance.')
+    
     args = parser.parse_args()
+    
+    # Apply robust mode settings if enabled
+    if args.robust:
+        print("\n[ROBUST MODE ENABLED]")
+        print("  Using conservative parameters for challenging trajectories:")
+        # Override with conservative settings
+        if args.k_neighbors > 10:
+            args.k_neighbors = 10
+            print(f"  - k_neighbors reduced to {args.k_neighbors}")
+        if args.lag_msm > 20:
+            args.lag_msm = 20
+            print(f"  - lag_msm reduced to {args.lag_msm}")
+        if args.window < 7:
+            args.window = 7
+            print(f"  - window size increased to {args.window}")
+        args.normalization = 'percentile'
+        args.low_percentile = 0.10
+        args.high_percentile = 0.90
+        print(f"  - normalization: percentile [{args.low_percentile}, {args.high_percentile}]")
+        print("")
     
     # Setup
     output_dir = Path(args.output_dir)
@@ -235,13 +265,19 @@ Output Files:
     print("  - Transition surprise (kinetic)")
     print("  - Local density (structural)")
     
+    # Auto-optimization is enabled by default (unless --no-auto-optimize is set)
+    auto_optimize = not args.no_auto_optimize
+    if auto_optimize and n_frames >= 10_000:
+        print(f"  [Auto-optimization enabled for {n_frames:,} frames]")
+    
     signals = compute_dynamic_anomaly_scores(
         msm=msm,
         dtraj=dtraj,
         tica_coords=tica_coords,
         lag_msm=args.lag_msm,
         k_neighbors=args.k_neighbors,
-        normalize=True  # Pre-normalize individual signals
+        normalize=True,  # Pre-normalize individual signals
+        auto_optimize=auto_optimize
     )
     
     # Fuse signals
