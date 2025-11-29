@@ -203,7 +203,32 @@ Output Files:
     parser.add_argument('--fusion', choices=['median', 'mean'], default='median',
                        help='Signal fusion method (default: median)')
     
+    # Robust mode
+    parser.add_argument('--robust', action='store_true',
+                       help='Enable robust mode for challenging trajectories. '
+                            'Uses conservative parameters and graceful degradation.')
+    
     args = parser.parse_args()
+    
+    # Apply robust mode settings if enabled
+    if args.robust:
+        print("\n[ROBUST MODE ENABLED]")
+        print("  Using conservative parameters for challenging trajectories:")
+        # Override with conservative settings
+        if args.k_neighbors > 10:
+            args.k_neighbors = min(args.k_neighbors, 10)
+            print(f"  - k_neighbors reduced to {args.k_neighbors}")
+        if args.lag_msm > 20:
+            args.lag_msm = min(args.lag_msm, 20)
+            print(f"  - lag_msm reduced to {args.lag_msm}")
+        if args.window < 7:
+            args.window = 7
+            print(f"  - window size increased to {args.window}")
+        args.normalization = 'percentile'
+        args.low_percentile = 0.10
+        args.high_percentile = 0.90
+        print(f"  - normalization: percentile [{args.low_percentile}, {args.high_percentile}]")
+        print("")
     
     # Setup
     output_dir = Path(args.output_dir)

@@ -464,6 +464,132 @@ pip install mdtraj
 - **Percentile**: Best for focusing on bulk distribution (recommended)
 - **Zscore**: Best if your scores are Gaussian
 
+### Issue: Pipeline fails for short trajectories
+
+**Cause**: Not enough frames for reliable tICA/MSM estimation.
+
+**Solution**: Use robust mode:
+```bash
+python tools/compute_all_metrics.py \
+    --topology data/topology.pdb \
+    --trajectory data/trajectory.xtc \
+    --msm_dir outputs/msm \
+    --robust
+```
+
+### Issue: NaN or Inf in outputs
+
+**Cause**: Numerical instability from ill-conditioned matrices or log(0).
+
+**Solution**:
+- Use `--robust` mode which adds numerical safeguards
+- Check for constant features or disconnected MSM states
+- Try reducing number of clusters or increasing lag time
+
+### Issue: Empty or degenerate clusters
+
+**Cause**: Too many clusters for the amount of data.
+
+**Solution**:
+```bash
+# Reduce number of clusters when building MSM
+python tools/run_msm_tica.py data/features.npy outputs/msm \
+    --n_clusters 15  # Reduced from default 30
+```
+
+---
+
+## Robust Mode
+
+The `--robust` flag enables conservative settings for challenging trajectories:
+
+### When to Use Robust Mode
+
+- Trajectory has fewer than 500 frames
+- Multiple short trajectories instead of one long trajectory  
+- High noise or artifacts in trajectory
+- MSM estimation fails with default parameters
+- Anomaly scores have no contrast (all similar values)
+
+### What Robust Mode Does
+
+1. **Reduces k_neighbors** to 10 (from default 20)
+   - Better for shorter trajectories where k-NN can fail
+
+2. **Reduces lag_msm** to 20 (from default 30)
+   - Shorter lag time works better with limited data
+
+3. **Increases smoothing window** to 7 (from default 5)
+   - More aggressive smoothing reduces noise
+
+4. **Uses percentile normalization** with [0.10, 0.90]
+   - Clips more extreme values for better visualization
+
+### Example
+
+```bash
+python tools/compute_all_metrics.py \
+    --topology data/topology.pdb \
+    --trajectory data/short_trajectory.xtc \
+    --msm_dir outputs/msm \
+    --output_dir outputs/metrics \
+    --robust
+```
+
+Output:
+```
+[ROBUST MODE ENABLED]
+  Using conservative parameters for challenging trajectories:
+  - k_neighbors reduced to 10
+  - lag_msm reduced to 20
+  - window size increased to 7
+  - normalization: percentile [0.1, 0.9]
+```
+
+---
+
+## Limitations and Edge Cases
+
+### Minimum Requirements
+
+| Parameter | Minimum | Recommended | Notes |
+|-----------|---------|-------------|-------|
+| Trajectory length | 100 frames | 1000+ frames | Fewer frames → poor MSM statistics |
+| Frames per state | 10 | 100-200 | Below this, state populations unreliable |
+| tICA lag | 5 frames | 10-50 frames | Must be < trajectory length / 10 |
+| MSM lag | 10 frames | 20-50 frames | Must satisfy Markov property |
+
+### Known Limitations
+
+1. **Very short trajectories (< 100 frames)**
+   - MSM statistics become unreliable
+   - Consider using density-based scoring only
+   - Use `--robust` mode
+
+2. **Disconnected MSM states**
+   - Some states may never transition to others
+   - Pipeline handles this gracefully with pseudo-counts
+   - Check for warnings about disconnected states
+
+3. **Highly heterogeneous trajectories**
+   - Multiple distinct conformational basins
+   - May need trajectory-specific normalization
+   - Consider per-frame normalization (`--per-frame-norm`)
+
+4. **Trajectory artifacts**
+   - Unphysical conformations will appear as strong anomalies
+   - Inspect top anomalous frames visually
+   - Filter trajectory before analysis if needed
+
+### Error Messages and Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Trajectory too short" | < 2 frames | Check trajectory loading |
+| "No atoms found with selection" | Bad atom selection | Check topology file |
+| "Singular covariance matrix" | Zero variance features | Remove frozen atoms |
+| "MSM has 0 states" | All frames in one cluster | Reduce n_clusters |
+
 ---
 
 ## Advanced Usage

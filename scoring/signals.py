@@ -154,15 +154,42 @@ def compute_dynamic_anomaly_scores(
             
     Note:
         All signals are oriented so that higher values = more anomalous.
+        
+    Raises:
+        ValueError: If trajectory length is less than lag_msm + 1
     """
     from sklearn.neighbors import NearestNeighbors
     
     n_frames = len(dtraj)
+    
+    # Validate inputs
+    if n_frames < 2:
+        raise ValueError(f"Trajectory too short: {n_frames} frames (need at least 2)")
+    
+    if n_frames <= lag_msm:
+        warnings.warn(
+            f"Trajectory length ({n_frames}) <= lag_msm ({lag_msm}). "
+            f"Reducing lag_msm to {max(1, n_frames // 2)}."
+        )
+        lag_msm = max(1, n_frames // 2)
+    
     signals = {}
     
-    # Get MSM parameters
+    # Get MSM parameters with validation
     pi = msm.stationary_distribution
     P = msm.transition_matrix
+    
+    # Check for invalid probabilities
+    if np.any(np.isnan(pi)) or np.any(np.isinf(pi)):
+        warnings.warn("NaN or Inf in stationary distribution. Using uniform.")
+        pi = np.ones(msm.n_states) / msm.n_states
+    
+    if np.any(np.isnan(P)) or np.any(np.isinf(P)):
+        warnings.warn("NaN or Inf in transition matrix. Renormalizing.")
+        P = np.nan_to_num(P, nan=0.0, posinf=1.0, neginf=0.0)
+        row_sums = P.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0  # Avoid division by zero
+        P = P / row_sums
     n_states = msm.n_states
     
     # --- Signal 1: State Rarity ---
