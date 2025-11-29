@@ -1,5 +1,7 @@
 data/colored_frames/
-outputs/
+# Ignore outputs subdirectories but allow summary
+outputs/*
+!outputs/summary/
 *.xtc
 *.pdb
 __pycache__/

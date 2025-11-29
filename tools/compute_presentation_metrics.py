@@ -516,10 +516,17 @@ def main():
     )
     
     parser.add_argument(
+        'predictions_path',
+        type=Path,
+        nargs='?',
+        default=None,
+        help='Path to predictions CSV or Parquet file. If not provided, auto-detects from repo outputs.'
+    )
+    parser.add_argument(
         '--predictions', '-p',
         type=Path,
         default=None,
-        help='Path to predictions CSV or Parquet file. If not provided, auto-detects from repo outputs.'
+        help='Path to predictions CSV or Parquet file (alternative to positional argument).'
     )
     parser.add_argument(
         '--out-dir', '-o',
@@ -560,6 +567,10 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Handle predictions path from either positional or --predictions argument
+    if args.predictions_path is not None:
+        args.predictions = args.predictions_path
     
     # Set random seed
     np.random.seed(args.seed)
