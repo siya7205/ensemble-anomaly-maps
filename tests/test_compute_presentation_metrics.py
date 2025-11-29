@@ -152,6 +152,31 @@ class TestComputePresentationMetrics:
             per_run_df = pd.read_csv(output_dir / 'metrics_summary_per_run.csv')
             assert 'run_id' in per_run_df.columns, "Missing run_id column in per-run metrics"
     
+    def test_positional_argument(self, sample_predictions_path, output_dir):
+        """Test that positional argument works for predictions path."""
+        script_path = Path(__file__).parent.parent / 'tools' / 'compute_presentation_metrics.py'
+        
+        result = subprocess.run(
+            [
+                sys.executable, str(script_path),
+                str(sample_predictions_path),  # positional argument
+                '--out-dir', str(output_dir),
+                '--bootstrap', '100',
+                '--seed', '42'
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).parent.parent)
+        )
+        
+        # Print output for debugging
+        if result.returncode != 0:
+            print("STDOUT:", result.stdout)
+            print("STDERR:", result.stderr)
+        
+        assert result.returncode == 0, f"Script failed with: {result.stderr}"
+        assert (output_dir / 'metrics_summary.csv').exists(), "metrics_summary.csv not created"
+    
     def test_dry_run(self, sample_predictions_path):
         """Test dry run mode doesn't create output files."""
         script_path = Path(__file__).parent.parent / 'tools' / 'compute_presentation_metrics.py'

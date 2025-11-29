@@ -516,10 +516,17 @@ def main():
     )
     
     parser.add_argument(
+        'predictions_path',
+        type=Path,
+        nargs='?',
+        default=None,
+        help='Path to predictions CSV or Parquet file (positional). Overrides --predictions if both provided.'
+    )
+    parser.add_argument(
         '--predictions', '-p',
         type=Path,
         default=None,
-        help='Path to predictions CSV or Parquet file. If not provided, auto-detects from repo outputs.'
+        help='Path to predictions CSV or Parquet file. If neither positional nor --predictions provided, auto-detects from repo outputs.'
     )
     parser.add_argument(
         '--out-dir', '-o',
@@ -560,6 +567,16 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Handle predictions path from either positional or --predictions argument
+    # Positional argument takes precedence if both are provided
+    if args.predictions_path is not None:
+        if args.predictions is not None:
+            logger.warning(
+                f"Both positional argument ({args.predictions_path}) and --predictions ({args.predictions}) provided. "
+                f"Using positional argument."
+            )
+        args.predictions = args.predictions_path
     
     # Set random seed
     np.random.seed(args.seed)
