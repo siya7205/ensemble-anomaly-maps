@@ -10,6 +10,7 @@ Tests robust handling of:
 - Missing or invalid data
 """
 import sys
+import traceback
 import numpy as np
 import warnings
 from pathlib import Path
@@ -592,7 +593,6 @@ def main():
             passed += 1
         except Exception as e:
             print(f"  ✗ FAILED: {e}")
-            import traceback
             traceback.print_exc()
             failed += 1
     

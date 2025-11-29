@@ -216,10 +216,10 @@ Output Files:
         print("  Using conservative parameters for challenging trajectories:")
         # Override with conservative settings
         if args.k_neighbors > 10:
-            args.k_neighbors = min(args.k_neighbors, 10)
+            args.k_neighbors = 10
             print(f"  - k_neighbors reduced to {args.k_neighbors}")
         if args.lag_msm > 20:
-            args.lag_msm = min(args.lag_msm, 20)
+            args.lag_msm = 20
             print(f"  - lag_msm reduced to {args.lag_msm}")
         if args.window < 7:
             args.window = 7
