@@ -28,6 +28,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Constants
+DEFAULT_RANDOM_SEED = 42
+EPSILON = 1e-10  # Small constant for numerical stability
+
 try:
     import matplotlib
     matplotlib.use('Agg')
@@ -148,10 +152,10 @@ def create_example_panel(
     logger.info(f"Saved example panel: {output_path}")
 
 
-def generate_synthetic_example(out_dir: Path) -> Dict[str, Tuple[int, float]]:
+def generate_synthetic_example(out_dir: Path, seed: int = DEFAULT_RANDOM_SEED) -> Dict[str, Tuple[int, float]]:
     """Generate synthetic example frames when no real data is available."""
     # Create synthetic frame scores (200 frames with ~20% anomaly rate)
-    np.random.seed(42)
+    np.random.seed(seed)
     n_frames = 200
     
     # Normal distribution for majority, some high scores
@@ -223,6 +227,12 @@ def main():
         action='store_true',
         help='Generate synthetic example data'
     )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=DEFAULT_RANDOM_SEED,
+        help=f'Random seed for synthetic data generation (default: {DEFAULT_RANDOM_SEED})'
+    )
     
     args = parser.parse_args()
     
@@ -238,7 +248,7 @@ def main():
     
     # Load or generate scores
     if args.synthetic:
-        frames = generate_synthetic_example(args.out_dir)
+        frames = generate_synthetic_example(args.out_dir, seed=args.seed)
         scores_df = pd.read_csv(args.out_dir / 'synthetic_frame_scores.csv')
         score_col = 'y_score'
     else:
@@ -246,7 +256,7 @@ def main():
         
         if scores_df is None:
             logger.warning("No frame scores found. Generating synthetic example data.")
-            frames = generate_synthetic_example(args.out_dir)
+            frames = generate_synthetic_example(args.out_dir, seed=args.seed)
             scores_df = pd.read_csv(args.out_dir / 'synthetic_frame_scores.csv')
             score_col = 'y_score'
         else:
@@ -267,7 +277,7 @@ def main():
             # If scores are negative (like if_score), invert them
             if scores.min() < 0:
                 scores = -scores  # Higher is more anomalous
-                scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-10)
+                scores = (scores - scores.min()) / (scores.max() - scores.min() + EPSILON)
             
             frames = find_representative_frames(scores)
     
