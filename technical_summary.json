@@ -1,6 +1,6 @@
 {
-  "generated_at": "2025-11-29T15:01:14.800967",
-  "commit_hash": "7a90faa7ef6f",
+  "generated_at": "2025-11-30T08:55:55.742280",
+  "commit_hash": "0c30c17f7a84",
   "metrics": {
     "n_samples": 200,
     "n_positive": 44,
