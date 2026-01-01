@@ -51,15 +51,16 @@ def check_trajectory_quality(traj_path: str, top_path: str) -> Dict[str, any]:
             'message': f'Limited frames ({traj.n_frames}). Recommended 1000+ for robust statistics.'
         })
     
-    # Check 2: Clashes
+    # Check 2: Clashes (minimum CA-CA distance)
     ca_atoms = traj.topology.select('name CA')
     if len(ca_atoms) > 1:
         distances = md.compute_distances(traj, [(ca_atoms[0], ca_atoms[1])])
         min_distance = distances.min()
-        if min_distance < 0.2:  # 2 Angstroms
+        # Check for unrealistic close distances (0.2 nm = 2 Angstroms)
+        if min_distance < 0.2:
             diagnostics['issues'].append({
                 'severity': 'ERROR',
-                'message': f'Possible clash detected: min CA-CA distance = {min_distance:.2f} nm'
+                'message': f'Possible clash detected: min CA-CA distance = {min_distance:.2f} nm (2 Å threshold)'
             })
     
     # Check 3: Unfolding

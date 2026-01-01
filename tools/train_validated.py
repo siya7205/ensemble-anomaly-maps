@@ -14,12 +14,22 @@ import json
 from pathlib import Path
 from typing import Optional
 
+# Exit codes
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from msm.input_validation import validate_input_data, print_validation_summary
 from msm.reproducibility import set_global_seed
-from tools.run_phase1 import run_phase1_pipeline
+
+try:
+    from tools.run_phase1 import run_phase1_pipeline
+except ImportError as e:
+    print(f"Error: Failed to import run_phase1 module: {e}")
+    print("Please ensure the tools/ directory is in your Python path")
+    sys.exit(EXIT_FAILURE)
 
 
 def train_with_validation(features_path: str,
@@ -81,7 +91,7 @@ def train_with_validation(features_path: str,
         if not is_valid and not force:
             print("\n✗ Validation FAILED. Fix errors before training.")
             print("  Use --force to proceed anyway (not recommended).")
-            return 1
+            return EXIT_FAILURE
         elif not is_valid and force:
             print("\n⚠ WARNING: Proceeding despite validation failures (--force used)")
     else:
@@ -103,7 +113,7 @@ def train_with_validation(features_path: str,
         print(f"\n✗ Training failed: {e}")
         import traceback
         traceback.print_exc()
-        return 1
+        return EXIT_FAILURE
     
     # Step 3: Post-Training Validation
     print("\n[STEP 3/3] Post-Training Validation")
@@ -125,7 +135,7 @@ def train_with_validation(features_path: str,
     print("  3. Review validation plots and metrics")
     print("  4. If validation passes, proceed with anomaly detection")
     
-    return 0
+    return EXIT_SUCCESS
 
 
 def main():

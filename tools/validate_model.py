@@ -14,6 +14,10 @@ from pathlib import Path
 import numpy as np
 import json
 
+# Exit codes
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -272,7 +276,7 @@ def validate_msm(msm_dir: Path,
         print("OVERALL: ✗ MODEL NEEDS REVIEW - Check validation report for details")
     print("="*70)
     
-    return 0 if all_passed else 1
+    return EXIT_SUCCESS if all_passed else EXIT_FAILURE
 
 
 def main():

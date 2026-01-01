@@ -16,6 +16,9 @@ from deeptime.markov.msm import MaximumLikelihoodMSM
 from deeptime.markov import TransitionCountEstimator
 from deeptime.decomposition import TICA
 
+# Constants for numerical stability
+COVARIANCE_REGULARIZATION = 1e-6  # Small value added to diagonal for numerical stability
+
 
 def chapman_kolmogorov_test(dtraj: np.ndarray, 
                             msm_lag: int, 
@@ -189,10 +192,9 @@ def vamp2_cross_validation(X: np.ndarray,
                 C_1 = np.cov(Y_val[lag:].T)
                 C_01 = np.cov(Y_val[:-lag].T, Y_val[lag:].T)[:dim, dim:]
                 
-                # Regularize
-                reg = 1e-6
-                C_0 += reg * np.eye(dim)
-                C_1 += reg * np.eye(dim)
+                # Regularize covariances for numerical stability
+                C_0 += COVARIANCE_REGULARIZATION * np.eye(dim)
+                C_1 += COVARIANCE_REGULARIZATION * np.eye(dim)
                 
                 # VAMP-2 score
                 C_0_inv_sqrt = np.linalg.inv(np.linalg.cholesky(C_0)).T
