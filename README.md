@@ -116,6 +116,38 @@ python tools/run_phase1.py --features data/features.npy --output outputs/phase1
 # See PHASE1.md for detailed documentation
 ```
 
+### **NEW: Scientifically Validated Training (Recommended)**
+
+```bash
+# Train with comprehensive validation and best practices
+python tools/train_validated.py \
+    --features data/features.npy \
+    --output outputs/validated \
+    --topology data/raw_trajectory/align_topol.pdb \
+    --trajectory data/raw_trajectory/trajectory.xtc \
+    --lag_tica 10 --lag_msm 30 --n_clusters 30
+
+# This performs:
+#   1. Input data validation (trajectory quality, feature quality, parameter compatibility)
+#   2. VAMP-2 based model selection  
+#   3. Bootstrap MSM for uncertainty quantification
+#   4. Reproducible configuration saving
+
+# Then validate the trained model:
+python tools/validate_model.py \
+    --msm_dir outputs/validated/phase1/models/msm_bootstrap \
+    --output_dir outputs/validated/validation
+
+# This validates:
+#   - Chapman-Kolmogorov test (Markov property)
+#   - Implied timescales convergence
+#   - Stationary distribution accuracy
+#   - Model generalization (cross-validation)
+
+# See SCIENTIFIC_TRAINING_GUIDE.md for best practices
+```
+
+
 ### Enhanced Pipeline (Phase 2: Feature Extensions)
 
 ```bash
