@@ -13,6 +13,8 @@ It combines machine-learning-based motion analysis with interactive molecular vi
 **📖 Documentation:**
 - **[QUICKSTART.md](QUICKSTART.md)** - 🚀 **START HERE** - Step-by-step terminal commands to run the pipeline
 - **[USAGE.md](USAGE.md)** - Complete usage guide with detailed parameter explanations
+- **[OUTPUT_INTERFACE_SPECIFICATION.md](OUTPUT_INTERFACE_SPECIFICATION.md)** - 📊 **Output Data Contracts** - For visualization system integration
+- **[PIPELINE_OUTPUTS_SUMMARY.md](PIPELINE_OUTPUTS_SUMMARY.md)** - Quick reference for pipeline outputs
 - **[PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md](PIPELINE_SUMMARY_FOR_BIOCHEMISTS.md)** - Accessible scientific overview for non-CS researchers
 - **[SCIENTIFIC_DOCUMENTATION.md](SCIENTIFIC_DOCUMENTATION.md)** - Comprehensive technical and scientific documentation
   - What we're doing in the ML pipeline and why
