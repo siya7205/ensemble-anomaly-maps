@@ -55,6 +55,7 @@ DEFAULT_N_CLUSTERS = 8
 DEFAULT_LAG_MSM = 10
 N_SLOW_MODES = 3       # top slow modes to analyse
 N_ITS_MODES = 5        # modes to report in ITS table
+CA_PAIR_WINDOW = 5     # sequential CA pairs within this residue window for traj2 features
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,7 @@ def compute_implied_timescales(X, lag_msm, dim_tica, n_clusters,
       implied_timescale_cv.csv    – columns: mode_index, mean, std, cv
     """
     log.info("=== 1. Implied Timescales ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     lag_factors = [0.5, 0.75, 1.0, 1.25, 1.5]
     lag_times = sorted({max(1, int(f * lag_msm)) for f in lag_factors})
@@ -165,6 +167,7 @@ def compute_ck_errors(X, lag_msm, dim_tica, n_clusters, lag_tica, output_dir):
       ck_errors.csv – columns: n_step, frobenius_error, mean_error_per_n
     """
     log.info("=== 2. CK Errors ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     msm_base, _, _, _ = _fit_pipeline(X, lag_tica, dim_tica,
                                       n_clusters, lag_msm)
@@ -211,6 +214,7 @@ def compute_vamp_comparison(X, lag_msm, dim_tica, lag_tica, output_dir):
       vamp_comparison.csv – columns: model_type, vamp2_score
     """
     log.info("=== 3. VAMP-2 Comparison ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     records = []
 
@@ -374,6 +378,7 @@ def compute_residue_ranking(frame_scores, n_residues, output_dir):
       topk_sets.csv       – columns: k_percent, residue_id
     """
     log.info("=== 4. Per-Residue Ranking ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     fused = _residue_fused_scores(frame_scores, n_residues)
     fused = np.nan_to_num(fused, nan=0.0)
@@ -416,6 +421,7 @@ def compute_hotspot_slowmode_alignment(fused_scores, tica_model,
       hotspot_slowmode_alignment.csv – columns: spearman_rho, p_value
     """
     log.info("=== 5. Hotspot–Slow-Mode Alignment ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # tICA loadings: instantaneous_coefficients has shape (n_features, n_dim)
     eigvec = np.array(tica_model.instantaneous_coefficients)  # (n_features, dim)
@@ -459,6 +465,7 @@ def compute_transition_enrichment(frame_scores, dtraj, output_dir):
       transition_enrichment.csv – columns: mean_transition, mean_stable, cohens_d
     """
     log.info("=== 6. Transition Enrichment ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     n_frames = len(dtraj)
     window = 5
@@ -516,6 +523,7 @@ def compute_spatial_clustering(fused_scores, n_residues, topology_path,
                                          random_std, z_score
     """
     log.info("=== 7. Spatial Clustering ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Parse Cα coordinates from PDB
     ca_coords = []
@@ -667,6 +675,7 @@ def compute_ranking_stability(X, lag_msm, dim_tica, n_clusters, lag_tica,
                                         p90_rank_shift
     """
     log.info("=== 8. Ranking Stability (RQ3) ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     def _metrics(pert_ranks):
         rho, _ = spearmanr(baseline_ranks, pert_ranks)
@@ -779,6 +788,424 @@ def _print_summary(df_cv, df_ck, df_vamp, df_align, df_enrich,
 
 
 # ---------------------------------------------------------------------------
+# ISSUE 1 — Circular Hotspot–Slow-Mode Correlation (no-tICA variant)
+# ---------------------------------------------------------------------------
+
+def _residue_fused_scores_no_tica(frame_scores, n_residues):
+    """
+    Per-residue fused scores derived purely from frame-level signals,
+    WITHOUT using the per-residue reference scores (ref_scores) that
+    also drive the tICA importance metric I_residue.
+
+    Each residue is assigned the mean anomaly score of its round-robin
+    frame subset, giving genuine per-residue variation independent of
+    tICA loadings.
+    """
+    n_frames = len(frame_scores)
+    fused = np.zeros(n_residues)
+    for i in range(n_residues):
+        idx = np.arange(i, n_frames, n_residues)
+        if len(idx) == 0:
+            idx = np.arange(n_frames)   # guard: fallback to all frames
+        fused[i] = float(np.mean(frame_scores[idx]))
+    return fused
+
+
+def compute_hotspot_slowmode_alignment_no_tica(fused_scores_original,
+                                               frame_scores, tica_model,
+                                               n_residues, output_dir,
+                                               residue_scores_path=None):
+    """
+    ISSUE 1: Re-compute hotspot–slow-mode Spearman ρ excluding the
+    tICA importance signal from the fused hotspot scores.
+
+    The original fused scores use ref_scores (Ramachandran data) which
+    also appears in I_residue, creating a circular correlation.  This
+    function replaces fused scores with a frame-only variant that does
+    not use ref_scores, then re-computes Spearman ρ.
+
+    Saves:
+      hotspot_slowmode_alignment_no_tica.csv –
+        columns: old_spearman_rho, new_spearman_rho,
+                 circularity_confirmed
+    """
+    log.info("=== ISSUE 1: Hotspot–Slow-Mode (no tICA signal) ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # --- Reconstruct I_residue (same as original alignment) ---
+    eigvec = np.array(tica_model.instantaneous_coefficients)
+    n_modes = min(N_SLOW_MODES, eigvec.shape[1])
+    feat_importance = np.abs(eigvec[:, :n_modes]).sum(axis=1)
+    ref_scores = _load_residue_ref_scores(n_residues, residue_scores_path)
+    feat_avg = float(feat_importance.mean())
+    if ref_scores.max() > ref_scores.min():
+        norm_ref = (ref_scores - ref_scores.min()) / (ref_scores.max() - ref_scores.min())
+    else:
+        norm_ref = ref_scores
+    I_residue = feat_avg * (0.5 + 0.5 * norm_ref)
+
+    # --- Old ρ (original fused scores vs I_residue) ---
+    old_rho, _ = spearmanr(fused_scores_original, I_residue)
+
+    # --- New ρ (frame-only fused scores vs I_residue) ---
+    fused_no_tica = _residue_fused_scores_no_tica(frame_scores, n_residues)
+    new_rho, _ = spearmanr(fused_no_tica, I_residue)
+
+    circularity = bool(abs(old_rho) > 0.95 and abs(new_rho) < abs(old_rho) - 0.1)
+
+    log.info("  Old Spearman ρ = %.4f", old_rho)
+    log.info("  New Spearman ρ = %.4f (frame-only fused, no tICA signal)", new_rho)
+    log.info("  Circularity confirmed: %s", circularity)
+
+    df_out = pd.DataFrame([{
+        "old_spearman_rho": float(old_rho),
+        "new_spearman_rho": float(new_rho),
+        "circularity_confirmed": circularity,
+    }])
+    df_out.to_csv(output_dir / "hotspot_slowmode_alignment_no_tica.csv", index=False)
+    log.info("  Saved hotspot_slowmode_alignment_no_tica.csv")
+    return df_out
+
+
+# ---------------------------------------------------------------------------
+# ISSUE 2 — Corrected VAMP-2 Comparison
+# ---------------------------------------------------------------------------
+
+def compute_vamp_comparison_corrected(X, lag_msm, dim_tica, lag_tica, output_dir):
+    """
+    ISSUE 2: Corrected VAMP-2 comparison.
+
+    The original compute_vamp_comparison had a bug where both tICA and
+    raw_features used the same dim=min(dim_tica, X.shape[1]), yielding
+    identical VAMP-2 scores.
+
+    This corrected version:
+      - tICA:         VAMP-2 on tICA-projected features Y (dim=dim_tica)
+      - PCA:          VAMP-2 on PCA-projected features (dim=dim_tica)
+      - raw_features: VAMP-2 on all original features (dim=X.shape[1],
+                      no dimensionality reduction)
+
+    Saves:
+      vamp_comparison_corrected.csv – columns: model_type, vamp2_score
+    """
+    log.info("=== ISSUE 2: Corrected VAMP-2 Comparison ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    records = []
+
+    # tICA: project X, then score VAMP on tICA-projected space
+    try:
+        tica_model = TICA(lagtime=lag_tica, dim=dim_tica).fit(X).fetch_model()
+        Y = tica_model.transform(X)
+        score_tica = _vamp2_score(Y, lag=lag_tica, dim=dim_tica)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("  tICA VAMP-2 failed: %s", exc)
+        score_tica = -np.inf
+    records.append({"model_type": "tICA", "vamp2_score": score_tica})
+    log.info("  tICA VAMP-2 (on projected Y): %.4f", score_tica)
+
+    # PCA baseline: project X, then score VAMP on PCA space
+    pca = PCA(n_components=min(dim_tica, X.shape[1] - 1), random_state=SEED)
+    X_pca = pca.fit_transform(X)
+    score_pca = _vamp2_score(X_pca, lag=lag_tica, dim=min(dim_tica, X_pca.shape[1]))
+    records.append({"model_type": "PCA", "vamp2_score": score_pca})
+    log.info("  PCA  VAMP-2 (on projected X_pca): %.4f", score_pca)
+
+    # Raw features: NO projection — use all features, no dim reduction
+    score_raw = _vamp2_score(X, lag=lag_tica, dim=X.shape[1])
+    records.append({"model_type": "raw_features", "vamp2_score": score_raw})
+    log.info("  Raw  VAMP-2 (all %d features, no reduction): %.4f",
+             X.shape[1], score_raw)
+
+    df_vamp = pd.DataFrame(records)
+    df_vamp.to_csv(output_dir / "vamp_comparison_corrected.csv", index=False)
+    log.info("  Saved vamp_comparison_corrected.csv")
+    return df_vamp
+
+
+# ---------------------------------------------------------------------------
+# ISSUE 3 — Transition Enrichment Window Sweep
+# ---------------------------------------------------------------------------
+
+def compute_transition_enrichment_window_sweep(frame_scores, dtraj, output_dir):
+    """
+    ISSUE 3: Transition enrichment for multiple window sizes (±3, ±5, ±10).
+
+    For each window, labels frames within ±window steps of a state-change
+    event as "transition frames" and all others as "stable frames".
+    Computes Cohen's d for each window.
+
+    Saves:
+      transition_enrichment_window_sweep.csv –
+        columns: window_size, mean_transition, mean_stable, cohens_d
+    """
+    log.info("=== ISSUE 3: Transition Enrichment Window Sweep ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    n_frames = len(dtraj)
+    records = []
+
+    for window in [3, 5, 10]:
+        transition_mask = np.zeros(n_frames, dtype=bool)
+        for t in range(1, n_frames):
+            if dtraj[t] != dtraj[t - 1]:
+                lo = max(0, t - window)
+                hi = min(n_frames, t + window + 1)
+                transition_mask[lo:hi] = True
+
+        tr_scores = frame_scores[transition_mask]
+        st_scores = frame_scores[~transition_mask]
+
+        if len(tr_scores) == 0 or len(st_scores) == 0:
+            log.warning("  window=%d: no transition/stable frames — skipping", window)
+            continue
+
+        mean_tr = float(np.mean(tr_scores))
+        mean_st = float(np.mean(st_scores))
+
+        n1, n2 = len(tr_scores), len(st_scores)
+        s1 = float(np.std(tr_scores, ddof=1)) if n1 > 1 else 0.0
+        s2 = float(np.std(st_scores, ddof=1)) if n2 > 1 else 0.0
+        pooled_std = (np.sqrt(((n1 - 1) * s1 ** 2 + (n2 - 1) * s2 ** 2)
+                              / (n1 + n2 - 2))
+                     if (n1 + n2 > 2) else 1.0)
+        cohens_d = (mean_tr - mean_st) / (pooled_std + 1e-12)
+
+        records.append({
+            "window_size": window,
+            "mean_transition": mean_tr,
+            "mean_stable": mean_st,
+            "cohens_d": float(cohens_d),
+        })
+        log.info("  window=±%2d: mean_tr=%.4f  mean_st=%.4f  d=%.4f",
+                 window, mean_tr, mean_st, cohens_d)
+
+    if not records:
+        raise RuntimeError("No window sweep records computed.")
+
+    df_sweep = pd.DataFrame(records)
+    df_sweep.to_csv(output_dir / "transition_enrichment_window_sweep.csv", index=False)
+    log.info("  Saved transition_enrichment_window_sweep.csv")
+
+    log.info("\n  Window sweep summary:")
+    log.info("  %-12s %-16s %-16s %-12s", "window_size", "mean_transition",
+             "mean_stable", "cohens_d")
+    for _, row in df_sweep.iterrows():
+        log.info("  %-12d %-16.4f %-16.4f %-12.4f",
+                 int(row["window_size"]), row["mean_transition"],
+                 row["mean_stable"], row["cohens_d"])
+    return df_sweep
+
+
+# ---------------------------------------------------------------------------
+# ISSUE 4 — Ranking Stability Extended (top-20 % and top-30 %)
+# ---------------------------------------------------------------------------
+
+def _jaccard_topk(rank_a, rank_b, n_residues, k_percent):
+    """Jaccard index for top-k% residues."""
+    n_top = max(1, int(np.ceil(n_residues * k_percent / 100)))
+    set_a = set(np.where(rank_a <= n_top)[0])
+    set_b = set(np.where(rank_b <= n_top)[0])
+    union = set_a | set_b
+    if len(union) == 0:
+        return 0.0
+    return len(set_a & set_b) / len(union)
+
+
+def compute_ranking_stability_extended(X, lag_msm, dim_tica, n_clusters,
+                                       lag_tica, n_residues, baseline_ranks,
+                                       output_dir):
+    """
+    ISSUE 4: Extended ranking stability with top-10%, top-20%, top-30% Jaccard.
+
+    Also reports:
+      - Number of tied scores in fused residue scores
+      - Score variance
+
+    Saves:
+      ranking_stability_extended.csv –
+        columns: perturbation_type, topk_percent, jaccard_index
+    """
+    log.info("=== ISSUE 4: Ranking Stability Extended ===")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Compute baseline fused scores for diagnostics
+    msm_b, dtraj_b, Y_b, _ = _fit_pipeline(X, lag_tica, dim_tica, n_clusters, lag_msm)
+    fs_b = _fused_frame_scores(msm_b, dtraj_b, Y_b, lag_msm)
+    fused_b = _residue_fused_scores(fs_b, n_residues)
+    n_tied = int(np.sum(pd.Series(fused_b).duplicated()))
+    score_var = float(np.var(fused_b))
+    log.info("  Baseline fused scores: tied=%d  variance=%.6f", n_tied, score_var)
+
+    records = []
+
+    def _add(name, lag=lag_msm, dim=dim_tica, drop=None):
+        nc = min(n_clusters, 8)
+        try:
+            pert_ranks = _ranking_from_pipeline(
+                X, lag_tica, dim, nc, lag, n_residues, drop_signal=drop
+            )
+            for k_pct in [10, 20, 30]:
+                jac = _jaccard_topk(baseline_ranks, pert_ranks, n_residues, k_pct)
+                records.append({
+                    "perturbation_type": name,
+                    "topk_percent": k_pct,
+                    "jaccard_index": float(jac),
+                })
+            log.info("  %-35s J@10%%=%.3f  J@20%%=%.3f  J@30%%=%.3f", name,
+                     _jaccard_topk(baseline_ranks, pert_ranks, n_residues, 10),
+                     _jaccard_topk(baseline_ranks, pert_ranks, n_residues, 20),
+                     _jaccard_topk(baseline_ranks, pert_ranks, n_residues, 30))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("  %s failed: %s", name, exc)
+
+    lag_low = max(1, int(lag_msm * 0.80))
+    lag_high = max(1, int(lag_msm * 1.20))
+    _add(f"lag_minus20pct (lag={lag_low})", lag=lag_low)
+    _add(f"lag_plus20pct (lag={lag_high})", lag=lag_high)
+
+    dim_low = max(1, dim_tica - 2)
+    dim_high = min(X.shape[1] - 1, dim_tica + 2)
+    _add(f"dim_minus2 (dim={dim_low})", dim=dim_low)
+    _add(f"dim_plus2 (dim={dim_high})", dim=dim_high)
+
+    for sig in ["rarity", "transition_surprise", "local_density"]:
+        _add(f"drop_{sig}", drop=sig)
+
+    if not records:
+        raise RuntimeError("No extended ranking stability records computed.")
+
+    df_ext = pd.DataFrame(records)
+    df_ext.to_csv(output_dir / "ranking_stability_extended.csv", index=False)
+    log.info("  Saved ranking_stability_extended.csv")
+    log.info("  n_tied=%d  score_variance=%.6f", n_tied, score_var)
+    return df_ext
+
+
+# ---------------------------------------------------------------------------
+# ISSUE 5 — Second Trajectory Detection
+# ---------------------------------------------------------------------------
+
+def _load_second_trajectory_features(features_path, topology_path=None,
+                                      lag_tica=DEFAULT_LAG_TICA,
+                                      dim_tica=DEFAULT_DIM_TICA):
+    """
+    Attempt to locate a second trajectory's feature matrix.
+
+    Strategy (in order):
+      1. Look for ``features_traj2.npy`` next to ``features_path``.
+      2. Look for ``trajectory_1.xtc`` in the same directory as the
+         primary trajectory and load it with MDTraj (if available).
+
+    Returns (X2, source_label) or (None, message).
+    """
+    features_dir = Path(features_path).parent
+
+    # 1. Pre-computed features file
+    alt_feat = features_dir / "features_traj2.npy"
+    if alt_feat.exists():
+        X2 = np.load(alt_feat)
+        return X2, str(alt_feat)
+
+    # 2. Raw XTC trajectory for trajectory_1
+    if topology_path is not None:
+        topo = Path(topology_path)
+        traj1_candidate = topo.parent / "trajectory_1.xtc"
+        if traj1_candidate.exists():
+            try:
+                import mdtraj as md  # noqa: PLC0415
+                traj = md.load(str(traj1_candidate), top=str(topo))
+                # Compute Cα pairwise distances as features (within CA_PAIR_WINDOW residues)
+                ca_idx = traj.topology.select("name CA")
+                pairs = np.array([(ca_idx[i], ca_idx[j])
+                                  for i in range(len(ca_idx))
+                                  for j in range(i + 1, min(i + CA_PAIR_WINDOW, len(ca_idx)))])
+                if len(pairs) == 0:
+                    return None, "trajectory_1.xtc found but no CA pairs extracted."
+                X2 = md.compute_distances(traj, pairs)
+                return X2, str(traj1_candidate)
+            except ImportError:
+                return None, (
+                    "trajectory_1.xtc found but mdtraj is not installed — "
+                    "cannot load raw trajectory."
+                )
+            except Exception as exc:  # noqa: BLE001
+                return None, f"trajectory_1.xtc found but failed to load: {exc}"
+        # XTC exists but no topology
+        raw_dir = topo.parent if topo.parent.is_dir() else features_dir
+        xtc = raw_dir / "trajectory_1.xtc"
+        if xtc.exists():
+            return None, (
+                "trajectory_1.xtc found but topology path required to load it."
+            )
+
+    return None, "No second trajectory or features_traj2.npy found."
+
+
+def run_second_trajectory_evaluation(features_path, topology_path, output_dir,
+                                      lag_tica=DEFAULT_LAG_TICA,
+                                      dim_tica=DEFAULT_DIM_TICA,
+                                      n_clusters=DEFAULT_N_CLUSTERS,
+                                      lag_msm=DEFAULT_LAG_MSM):
+    """
+    ISSUE 5: Run full evaluation on the second MD trajectory (if available).
+
+    Saves results under output_dir/trajectory_2/ (same 5 core CSVs).
+    Prints a clear message if no second trajectory is found.
+    """
+    log.info("=== ISSUE 5: Second Trajectory Evaluation ===")
+
+    X2, source = _load_second_trajectory_features(
+        features_path, topology_path, lag_tica, dim_tica
+    )
+
+    if X2 is None:
+        log.info("  No second trajectory available: %s", source)
+        print(f"\n[ISSUE 5] No second trajectory available: {source}")
+        return None
+
+    log.info("  Loaded second trajectory features from: %s", source)
+    log.info("  Shape: %s", X2.shape)
+
+    traj2_dir = Path(output_dir) / "trajectory_2"
+    traj2_dir.mkdir(parents=True, exist_ok=True)
+    topology_path = Path(topology_path)
+
+    # Count residues from topology
+    with open(topology_path) as fh:
+        n_residues = sum(
+            1 for line in fh
+            if line.startswith("ATOM") and " CA " in line[12:16]
+        )
+
+    # Clamp parameters to data size
+    n_frames2 = X2.shape[0]
+    lt2 = min(lag_tica, n_frames2 // 4)
+    lm2 = min(lag_msm, n_frames2 // 4)
+    lt2 = max(lt2, 1)
+    lm2 = max(lm2, 1)
+
+    try:
+        compute_implied_timescales(X2, lm2, dim_tica, n_clusters, lt2, traj2_dir)
+        compute_ck_errors(X2, lm2, dim_tica, n_clusters, lt2, traj2_dir)
+        compute_vamp_comparison_corrected(X2, lm2, dim_tica, lt2, traj2_dir)
+
+        msm2, dtraj2, Y2, tica2 = _fit_pipeline(X2, lt2, dim_tica, n_clusters, lm2)
+        fs2 = _fused_frame_scores(msm2, dtraj2, Y2, lm2)
+        compute_residue_ranking(fs2, n_residues, traj2_dir)
+        compute_transition_enrichment(fs2, dtraj2, traj2_dir)
+
+        log.info("  Trajectory 2 evaluation complete → %s", traj2_dir)
+        print(f"\n[ISSUE 5] Second trajectory evaluated. Results in: {traj2_dir}")
+    except Exception as exc:  # noqa: BLE001
+        log.error("  Trajectory 2 evaluation failed: %s", exc)
+        print(f"\n[ISSUE 5] Second trajectory evaluation failed: {exc}")
+        return None
+
+    return traj2_dir
+
+
+# ---------------------------------------------------------------------------
 # Main entry-point
 # ---------------------------------------------------------------------------
 
@@ -871,11 +1298,78 @@ def run_chapter9_evaluation(features_path, topology_path, output_dir,
     )
 
     # ------------------------------------------------------------------ #
+    # ISSUE 1 — Circularity check (no-tICA comparison)
+    # ------------------------------------------------------------------ #
+    df_no_tica = compute_hotspot_slowmode_alignment_no_tica(
+        fused_scores, frame_scores, tica_model, n_residues, output_dir
+    )
+
+    # ------------------------------------------------------------------ #
+    # ISSUE 2 — Corrected VAMP-2 comparison
+    # ------------------------------------------------------------------ #
+    df_vamp_corrected = compute_vamp_comparison_corrected(
+        X, lag_msm, dim_tica, lag_tica, output_dir
+    )
+
+    # ------------------------------------------------------------------ #
+    # ISSUE 3 — Transition window sweep
+    # ------------------------------------------------------------------ #
+    df_sweep = compute_transition_enrichment_window_sweep(
+        frame_scores, dtraj, output_dir
+    )
+
+    # ------------------------------------------------------------------ #
+    # ISSUE 4 — Extended ranking stability
+    # ------------------------------------------------------------------ #
+    df_stab_ext = compute_ranking_stability_extended(
+        X, lag_msm, dim_tica, n_clusters, lag_tica,
+        n_residues, baseline_ranks, output_dir
+    )
+
+    # ------------------------------------------------------------------ #
+    # ISSUE 5 — Second trajectory
+    # ------------------------------------------------------------------ #
+    run_second_trajectory_evaluation(
+        features_path, topology_path, output_dir,
+        lag_tica, dim_tica, n_clusters, lag_msm
+    )
+
+    # ------------------------------------------------------------------ #
     # Summary
     # ------------------------------------------------------------------ #
     _print_summary(df_cv, df_ck, df_vamp, df_align, df_enrich,
                    df_spatial, df_stab)
 
+    # Final issue summary
+    sep = "=" * 70
+    log.info("\n%s", sep)
+    log.info("ISSUE INVESTIGATION SUMMARY")
+    log.info(sep)
+
+    row1 = df_no_tica.iloc[0]
+    log.info("\n[ISSUE 1] Circular Hotspot–Slow-Mode Correlation")
+    log.info("  Old Spearman ρ = %.4f", row1["old_spearman_rho"])
+    log.info("  New Spearman ρ = %.4f (frame-only scores, no tICA signal)",
+             row1["new_spearman_rho"])
+    log.info("  Circularity confirmed: %s", row1["circularity_confirmed"])
+
+    log.info("\n[ISSUE 2] Corrected VAMP-2 Scores")
+    for _, row in df_vamp_corrected.iterrows():
+        log.info("  %-15s  VAMP-2 = %.4f", row["model_type"], row["vamp2_score"])
+
+    log.info("\n[ISSUE 3] Transition Window Sweep")
+    for _, row in df_sweep.iterrows():
+        log.info("  window=±%2d: mean_tr=%.4f  mean_st=%.4f  d=%.4f",
+                 int(row["window_size"]), row["mean_transition"],
+                 row["mean_stable"], row["cohens_d"])
+
+    log.info("\n[ISSUE 4] Ranking Stability (extended top-k)")
+    for _, row in df_stab_ext.iterrows():
+        log.info("  %-35s top-%2d%%  J=%.3f",
+                 row["perturbation_type"], int(row["topk_percent"]),
+                 row["jaccard_index"])
+
+    log.info("\n%s", sep)
     log.info("All outputs saved to %s", output_dir)
 
 
