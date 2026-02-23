@@ -395,7 +395,7 @@ def test_rq1_transition_enrichment_cohens_d_finite():
     n_frames = 200
     # Construct dtraj with multiple clear transitions
     dtraj = np.array([0] * 50 + [1] * 50 + [0] * 50 + [1] * 50, dtype=np.int64)
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(7)  # fixed seed for reproducibility
     # Transition frames get higher scores to model anomaly detection
     frame_scores = rng.uniform(0.3, 0.5, n_frames)
     transition_mask = np.zeros(n_frames, dtype=bool)
@@ -442,7 +442,7 @@ def test_rq1_vamp2_corrected_scores_are_positive(tmp_path):
 def test_rq2_topk_sets_are_nested(tmp_path):
     """RQ2: Top-k% residue sets are monotonically nested (top-5 ⊆ top-10 ⊆ top-20)."""
     print("[TEST] RQ2: top-k sets are nested...")
-    frame_scores = np.random.default_rng(99).uniform(0, 1, 100)
+    frame_scores = np.random.default_rng(99).uniform(0, 1, 100)  # fixed seed for reproducibility
     n_residues = 30
     _, _ = compute_residue_ranking(frame_scores, n_residues, tmp_path)
     df_topk = pd.read_csv(tmp_path / "topk_sets.csv")
@@ -622,6 +622,7 @@ def test_rq3_window_sweep_cohens_d_varies():
     assert df["cohens_d"].notna().all(), "Cohen's d must be finite for all windows"
     # Values should differ across windows (larger window includes more frames near transitions)
     cohens_vals = df.sort_values("window_size")["cohens_d"].values
+    # Round to 8 decimal places to ignore floating-point noise while detecting real differences
     assert len(set(cohens_vals.round(8))) > 1, (
         "Cohen's d should differ across at least two window sizes"
     )
