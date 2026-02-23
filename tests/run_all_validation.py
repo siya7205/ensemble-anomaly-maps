@@ -3,9 +3,14 @@
 Comprehensive validation test runner.
 
 Executes all validation tests and generates summary report.
+Saves a full human-readable report to TEST_RESULTS.md in the repo root.
+
+Usage:
+    python tests/run_all_validation.py
 """
 import sys
 import subprocess
+import datetime
 from pathlib import Path
 import time
 
@@ -69,6 +74,71 @@ def run_test_file(test_file):
         }
 
 
+def save_results_markdown(results, output_path):
+    """Write a human-readable Markdown report of all test results."""
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    total = len(results)
+    passed = sum(1 for r in results if r['passed'])
+    failed = total - passed
+    total_time = sum(r['elapsed'] for r in results)
+
+    lines = [
+        "# Test Results",
+        "",
+        f"**Run date:** {now}  ",
+        f"**Python:** {sys.version.splitlines()[0]}  ",
+        f"**Repository:** siya7205/ensemble-anomaly-maps  ",
+        "",
+        "## Summary",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        f"| Test files run | {total} |",
+        f"| ✅ Passed | {passed} |",
+        f"| ❌ Failed | {failed} |",
+        f"| Total time | {total_time:.1f}s |",
+        "",
+        "## Per-File Results",
+        "",
+        "| Status | Test File | Time (s) | Notes |",
+        "|--------|-----------|----------|-------|",
+    ]
+
+    for r in results:
+        icon = "✅ PASS" if r['passed'] else "❌ FAIL"
+        note = ""
+        if not r['passed']:
+            err_lines = r['stderr'].strip().splitlines()
+            note = err_lines[-1][:80] if err_lines else "non-zero exit"
+        lines.append(f"| {icon} | `{r['file']}` | {r['elapsed']:.1f} | {note} |")
+
+    lines += ["", "---", "", "## Full Output Per Test File", ""]
+
+    for r in results:
+        icon = "✅ PASS" if r['passed'] else "❌ FAIL"
+        lines.append(f"### {icon} `{r['file']}` ({r['elapsed']:.1f}s)")
+        lines.append("")
+        stdout = r['stdout'].strip()
+        stderr = r['stderr'].strip()
+        if stdout:
+            lines.append("```")
+            lines.append(stdout)
+            lines.append("```")
+            lines.append("")
+        if stderr:
+            lines.append("**stderr:**")
+            lines.append("```")
+            lines.append(stderr)
+            lines.append("```")
+            lines.append("")
+        if not stdout and not stderr:
+            lines.append("*(no output)*")
+            lines.append("")
+
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"\n📄 Full report saved to: {output_path}")
+
+
 def main():
     """Run all validation tests."""
     print("="*70)
@@ -76,53 +146,50 @@ def main():
     print("="*70)
     print(f"Python: {sys.version}")
     print(f"Executable: {sys.executable}")
-    
+
     # Find all validation test files
     tests_dir = Path(__file__).parent
-    
-    test_files = [
-        tests_dir / 'test_dataset_validation.py',
-        tests_dir / 'test_statistical_validation.py',
-        tests_dir / 'test_reproducibility.py',
-        tests_dir / 'test_scientific_validation.py',
-    ]
-    
-    # Filter to existing files
-    test_files = [f for f in test_files if f.exists()]
-    
+
+    # Discover every test_*.py in the tests directory automatically
+    test_files = sorted(tests_dir.glob('test_*.py'))
+
     if not test_files:
         print("✗ No test files found!")
         return 1
-    
+
     print(f"\nFound {len(test_files)} test suites to run\n")
-    
+
     # Run all tests
     results = []
     for test_file in test_files:
         result = run_test_file(test_file)
         results.append(result)
-    
+
     # Generate summary
     print("\n" + "="*70)
     print("VALIDATION SUMMARY")
     print("="*70)
-    
+
     total_tests = len(results)
     passed_tests = sum(1 for r in results if r['passed'])
     failed_tests = total_tests - passed_tests
     total_time = sum(r['elapsed'] for r in results)
-    
+
     print(f"\nTest Files Run: {total_tests}")
     print(f"Passed: {passed_tests}")
     print(f"Failed: {failed_tests}")
     print(f"Total Time: {total_time:.2f}s")
-    
+
     print("\nDetailed Results:")
     print("-" * 70)
     for result in results:
         status = "✓ PASS" if result['passed'] else "✗ FAIL"
         print(f"{status:8} | {result['file']:40} | {result['elapsed']:6.2f}s")
-    
+
+    # Save Markdown report to repo root
+    repo_root = tests_dir.parent
+    save_results_markdown(results, repo_root / "TEST_RESULTS.md")
+
     # Overall status
     print("\n" + "="*70)
     if failed_tests == 0:

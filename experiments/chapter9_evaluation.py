@@ -127,7 +127,14 @@ def compute_implied_timescales(X, lag_msm, dim_tica, n_clusters,
             log.warning("  lag=%d failed: %s", lt, exc)
 
     if not records:
-        raise RuntimeError("No ITS records computed — check data / parameters.")
+        log.warning("No ITS records computed — all lag times yielded 1-state MSMs. "
+                    "Consider more data or fewer clusters.")
+        df_its = pd.DataFrame(columns=["lag_time", "mode_index", "timescale"])
+        df_cv = pd.DataFrame(columns=["mode_index", "mean", "std", "cv"])
+        df_its.to_csv(output_dir / "implied_timescales.csv", index=False)
+        df_cv.to_csv(output_dir / "implied_timescale_cv.csv", index=False)
+        log.info("  Saved empty implied_timescales.csv and implied_timescale_cv.csv")
+        return df_its, df_cv
 
     df_its = pd.DataFrame(records)
     df_its.to_csv(output_dir / "implied_timescales.csv", index=False)
@@ -152,6 +159,7 @@ def compute_implied_timescales(X, lag_msm, dim_tica, n_clusters,
     df_cv.to_csv(output_dir / "implied_timescale_cv.csv", index=False)
     log.info("  Saved implied_timescale_cv.csv")
     return df_its, df_cv
+
 
 
 def compute_ck_errors(X, lag_msm, dim_tica, n_clusters, lag_tica, output_dir):
