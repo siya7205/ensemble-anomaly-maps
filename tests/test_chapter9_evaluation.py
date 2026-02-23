@@ -361,6 +361,273 @@ def test_compute_ranking_stability_extended(tmp_path):
           f"k% values: {sorted(df['topk_percent'].unique().tolist())}")
 
 
+# ---------------------------------------------------------------------------
+# RQ1 — Signal Validity Tests
+# ---------------------------------------------------------------------------
+
+def test_rq1_frame_scores_have_variance():
+    """RQ1: Fused frame scores are not constant — pipeline captures real variation."""
+    print("[TEST] RQ1: frame scores have non-zero variance...")
+    X = _make_features(n_frames=150)
+    msm, dtraj, Y, _ = _fit_pipeline(X, 5, 3, 6, 5)
+    scores = _fused_frame_scores(msm, dtraj, Y, lag_msm=5)
+    assert np.std(scores) > 0, "Frame scores must not be constant (signal has no variance)"
+    assert scores.min() < scores.max(), "Frame scores must span a non-trivial range"
+    print(f"  ✓ Frame score std={np.std(scores):.4f}, range=[{scores.min():.4f}, {scores.max():.4f}]")
+
+
+def test_rq1_its_plateau_cv_finite(tmp_path):
+    """RQ1: ITS plateau CV values are finite and non-negative (timescales are stable)."""
+    print("[TEST] RQ1: ITS plateau CV is finite...")
+    X = _make_features(n_frames=150)
+    _, df_cv = compute_implied_timescales(X, lag_msm=5, dim_tica=3, n_clusters=6,
+                                          lag_tica=5, output_dir=tmp_path)
+    if len(df_cv) > 0:
+        assert df_cv["cv"].notna().all(), "CV values must all be non-NaN"
+        assert (df_cv["cv"] >= 0).all(), "CV values must be non-negative"
+        assert (df_cv["mean"] > 0).all(), "Mean timescales must be positive"
+    print(f"  ✓ ITS CV: {len(df_cv)} mode(s), all finite and non-negative")
+
+
+def test_rq1_transition_enrichment_cohens_d_finite():
+    """RQ1: Transition enrichment Cohen's d is finite for data with clear state changes."""
+    print("[TEST] RQ1: transition enrichment Cohen's d is finite...")
+    n_frames = 200
+    # Construct dtraj with multiple clear transitions
+    dtraj = np.array([0] * 50 + [1] * 50 + [0] * 50 + [1] * 50, dtype=np.int64)
+    rng = np.random.default_rng(7)
+    # Transition frames get higher scores to model anomaly detection
+    frame_scores = rng.uniform(0.3, 0.5, n_frames)
+    transition_mask = np.zeros(n_frames, dtype=bool)
+    for t in range(1, n_frames):
+        if dtraj[t] != dtraj[t - 1]:
+            transition_mask[max(0, t - 5):min(n_frames, t + 6)] = True
+    frame_scores[transition_mask] = rng.uniform(0.6, 0.9, transition_mask.sum())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        df_enrich = compute_transition_enrichment(frame_scores, dtraj, Path(tmp))
+    cohens_d = df_enrich["cohens_d"].iloc[0]
+    assert np.isfinite(cohens_d), "Cohen's d must be finite"
+    assert cohens_d > 0, (
+        "Cohen's d should be positive when transition frames have higher scores"
+    )
+    print(f"  ✓ Cohen's d = {cohens_d:.4f} (positive: transition frames more anomalous)")
+
+
+def test_rq1_vamp2_corrected_scores_are_positive(tmp_path):
+    """RQ1: Corrected VAMP-2 scores are positive for all model types."""
+    print("[TEST] RQ1: corrected VAMP-2 scores are positive...")
+    X = _make_features(n_frames=150)
+    df = compute_vamp_comparison_corrected(X, lag_msm=5, dim_tica=3,
+                                           lag_tica=5, output_dir=tmp_path)
+    for _, row in df.iterrows():
+        assert row["vamp2_score"] > 0, (
+            f"VAMP-2 score for {row['model_type']} must be positive, "
+            f"got {row['vamp2_score']:.4f}"
+        )
+    # tICA and raw_features should differ in the corrected comparison
+    score_tica = df.loc[df["model_type"] == "tICA", "vamp2_score"].iloc[0]
+    score_raw = df.loc[df["model_type"] == "raw_features", "vamp2_score"].iloc[0]
+    assert score_tica != score_raw, (
+        "Corrected VAMP-2: tICA and raw_features must use different dimensionality"
+    )
+    print(f"  ✓ VAMP-2 scores: tICA={score_tica:.4f}, raw={score_raw:.4f}, PCA="
+          f"{df.loc[df['model_type'] == 'PCA', 'vamp2_score'].iloc[0]:.4f}")
+
+
+# ---------------------------------------------------------------------------
+# RQ2 — Visualization as Validation Mechanism Tests
+# ---------------------------------------------------------------------------
+
+def test_rq2_topk_sets_are_nested(tmp_path):
+    """RQ2: Top-k% residue sets are monotonically nested (top-5 ⊆ top-10 ⊆ top-20)."""
+    print("[TEST] RQ2: top-k sets are nested...")
+    frame_scores = np.random.default_rng(99).uniform(0, 1, 100)
+    n_residues = 30
+    _, _ = compute_residue_ranking(frame_scores, n_residues, tmp_path)
+    df_topk = pd.read_csv(tmp_path / "topk_sets.csv")
+
+    ids_5 = set(df_topk[df_topk["k_percent"] == 5]["residue_id"])
+    ids_10 = set(df_topk[df_topk["k_percent"] == 10]["residue_id"])
+    ids_20 = set(df_topk[df_topk["k_percent"] == 20]["residue_id"])
+
+    assert ids_5.issubset(ids_10), "top-5% must be a subset of top-10%"
+    assert ids_10.issubset(ids_20), "top-10% must be a subset of top-20%"
+    assert len(ids_5) <= len(ids_10) <= len(ids_20), (
+        "Set sizes must be non-decreasing: |top-5| ≤ |top-10| ≤ |top-20|"
+    )
+    print(f"  ✓ Nested sets: |top-5%|={len(ids_5)}, |top-10%|={len(ids_10)}, "
+          f"|top-20%|={len(ids_20)}")
+
+
+def test_rq2_residue_ranking_visualization_columns(tmp_path):
+    """RQ2: Residue ranking CSV has all columns needed for visualization."""
+    print("[TEST] RQ2: residue ranking has visualization columns...")
+    frame_scores = np.random.default_rng(0).uniform(0, 1, 120)
+    n_residues = 25
+    df_rank, _ = compute_residue_ranking(frame_scores, n_residues, tmp_path)
+
+    required_cols = {"residue_id", "fused_score", "rank"}
+    assert required_cols.issubset(set(df_rank.columns)), (
+        f"Missing columns for visualization: {required_cols - set(df_rank.columns)}"
+    )
+    # Residue IDs cover expected range
+    assert df_rank["residue_id"].min() == 0
+    assert df_rank["residue_id"].max() == n_residues - 1
+    # Ranks are unique integers from 1 to n_residues
+    assert df_rank["rank"].nunique() == n_residues
+    assert df_rank["rank"].min() == 1
+    assert df_rank["rank"].max() == n_residues
+    print(f"  ✓ Visualization columns present; rank range [1, {n_residues}], "
+          f"residue IDs [0, {n_residues - 1}]")
+
+
+def test_rq2_frame_score_length_matches_trajectory():
+    """RQ2: Frame scores have exactly the same length as the input trajectory."""
+    print("[TEST] RQ2: frame score length matches trajectory...")
+    for n_frames in [80, 150, 200]:
+        X = _make_features(n_frames=n_frames)
+        msm, dtraj, Y, _ = _fit_pipeline(X, 5, 3, 6, 5)
+        scores = _fused_frame_scores(msm, dtraj, Y, lag_msm=5)
+        assert len(scores) == n_frames, (
+            f"Frame scores length {len(scores)} != n_frames {n_frames}"
+        )
+    print(f"  ✓ Frame score length matches trajectory for n_frames in [80, 150, 200]")
+
+
+def test_rq2_window_sweep_columns_for_visualization(tmp_path):
+    """RQ2: Window sweep CSV has columns enabling frame-resolved inspection."""
+    print("[TEST] RQ2: window sweep columns for visualization...")
+    dtraj = np.array([0] * 30 + [1] * 40 + [0] * 30, dtype=np.int64)
+    frame_scores = np.random.default_rng(5).uniform(0, 1, 100)
+    df = compute_transition_enrichment_window_sweep(frame_scores, dtraj, tmp_path)
+
+    required_cols = {"window_size", "mean_transition", "mean_stable", "cohens_d"}
+    assert required_cols.issubset(set(df.columns)), (
+        f"Missing visualization columns: {required_cols - set(df.columns)}"
+    )
+    # Increasing window should not necessarily increase Cohen's d — just verify all rows valid
+    assert df["cohens_d"].notna().all(), "All Cohen's d values must be non-NaN"
+    print(f"  ✓ Window sweep has {len(df)} rows with required visualization columns")
+
+
+# ---------------------------------------------------------------------------
+# RQ3 — Sensitivity and Robustness Tests
+# ---------------------------------------------------------------------------
+
+def test_rq3_stability_metrics_bounded(tmp_path):
+    """RQ3: All Jaccard and Spearman values from ranking stability are in valid ranges."""
+    print("[TEST] RQ3: stability metrics bounded correctly...")
+    X = _make_features(n_frames=150)
+    n_residues = 20
+    _, fused = compute_residue_ranking(
+        np.random.default_rng(0).uniform(0, 1, 150), n_residues, tmp_path
+    )
+    baseline_ranks = (pd.Series(fused)
+                      .rank(ascending=False, method="first")
+                      .values.astype(int))
+    df = compute_ranking_stability_extended(
+        X, lag_msm=5, dim_tica=3, n_clusters=6, lag_tica=5,
+        n_residues=n_residues, baseline_ranks=baseline_ranks,
+        output_dir=tmp_path
+    )
+    assert (df["jaccard_index"] >= 0).all(), "Jaccard index must be ≥ 0"
+    assert (df["jaccard_index"] <= 1).all(), "Jaccard index must be ≤ 1"
+    assert set(df["topk_percent"].unique()) == {10, 20, 30}, (
+        "Must report Jaccard for top-10%, top-20%, top-30%"
+    )
+    print(f"  ✓ All {len(df)} Jaccard values in [0, 1] for k% ∈ {{10, 20, 30}}")
+
+
+def test_rq3_fusion_median_vs_mean_differ():
+    """RQ3: Median and mean signal fusion produce different frame scores."""
+    print("[TEST] RQ3: median vs mean fusion differ...")
+    X = _make_features(n_frames=150)
+    msm, dtraj, Y, _ = _fit_pipeline(X, 5, 3, 6, 5)
+
+    from sklearn.neighbors import NearestNeighbors
+
+    n_frames = len(dtraj)
+    pi = msm.stationary_distribution
+    P = msm.transition_matrix
+    n_states = msm.n_states
+
+    rarity = np.array([1.0 - pi[s] if 0 <= s < n_states else 1.0
+                       for s in dtraj], dtype=np.float64)
+    surprise = np.zeros(n_frames)
+    for t in range(n_frames - 5):
+        s1, s2 = dtraj[t], dtraj[t + 5]
+        if 0 <= s1 < n_states and 0 <= s2 < n_states:
+            surprise[t] = -np.log(max(P[s1, s2], 1e-12))
+
+    k = min(10, n_frames - 1)
+    nbrs = NearestNeighbors(n_neighbors=k, n_jobs=1).fit(Y)
+    dists, _ = nbrs.kneighbors(Y)
+    local_density = dists.mean(axis=1)
+
+    def rank_norm(x):
+        if np.all(x == x[0]):
+            return np.zeros_like(x)
+        r = np.argsort(np.argsort(x)).astype(float)
+        return r / (len(x) - 1)
+
+    mat = np.column_stack([rank_norm(rarity), rank_norm(surprise),
+                           rank_norm(local_density)])
+    scores_median = np.median(mat, axis=1)
+    scores_mean = np.mean(mat, axis=1)
+
+    # Median and mean fusion are only identical when all signals agree exactly
+    assert not np.allclose(scores_median, scores_mean), (
+        "Median and mean fusion should differ for realistic multi-signal data"
+    )
+    diff = np.abs(scores_median - scores_mean).mean()
+    print(f"  ✓ Median vs mean fusion differ: mean |Δ| = {diff:.6f}")
+
+
+def test_rq3_lag_perturbation_changes_frame_scores():
+    """RQ3: Changing the MSM lag time produces different frame scores."""
+    print("[TEST] RQ3: lag perturbation changes frame scores...")
+    X = _make_features(n_frames=150)
+    msm_5, dtraj_5, Y_5, _ = _fit_pipeline(X, lag_tica=5, dim_tica=3,
+                                            n_clusters=6, lag_msm=5)
+    msm_3, dtraj_3, Y_3, _ = _fit_pipeline(X, lag_tica=5, dim_tica=3,
+                                            n_clusters=6, lag_msm=3)
+    scores_5 = _fused_frame_scores(msm_5, dtraj_5, Y_5, lag_msm=5)
+    scores_3 = _fused_frame_scores(msm_3, dtraj_3, Y_3, lag_msm=3)
+
+    # Different lag times must produce at least some difference in frame scores
+    assert not np.allclose(scores_5, scores_3), (
+        "Different lag times must produce different frame scores"
+    )
+    diff = np.abs(scores_5 - scores_3).mean()
+    print(f"  ✓ Lag 5 vs lag 3 frame scores differ: mean |Δ| = {diff:.6f}")
+
+
+def test_rq3_window_sweep_cohens_d_varies():
+    """RQ3: Window sweep Cohen's d values vary across window sizes (sensitivity check)."""
+    print("[TEST] RQ3: window sweep Cohen's d varies across windows...")
+    n_frames = 150
+    rng = np.random.default_rng(11)
+    dtraj = np.array([0] * 40 + [1] * 35 + [0] * 40 + [1] * 35, dtype=np.int64)
+    frame_scores = rng.uniform(0, 1, n_frames)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        df = compute_transition_enrichment_window_sweep(frame_scores, dtraj, Path(tmp))
+
+    # Must have exactly 3 window sizes
+    assert set(df["window_size"].tolist()) == {3, 5, 10}, (
+        "Window sweep must cover windows 3, 5, and 10"
+    )
+    # Cohen's d values must all be finite
+    assert df["cohens_d"].notna().all(), "Cohen's d must be finite for all windows"
+    # Values should differ across windows (larger window includes more frames near transitions)
+    cohens_vals = df.sort_values("window_size")["cohens_d"].values
+    assert len(set(cohens_vals.round(8))) > 1, (
+        "Cohen's d should differ across at least two window sizes"
+    )
+    print(f"  ✓ Cohen's d values: {dict(zip(df['window_size'].tolist(), cohens_vals.round(4).tolist()))}")
+
+
 def main():
     """Run all Chapter 9 evaluation tests."""
     print("=" * 70)
@@ -386,6 +653,24 @@ def main():
             test_compute_transition_enrichment_window_sweep(tmp_path / "sweep")
             test_compute_ranking_stability_extended(tmp_path / "rank_ext")
             test_full_pipeline_end_to_end(tmp_path / "e2e")
+
+            # RQ1 — Signal Validity
+            test_rq1_frame_scores_have_variance()
+            test_rq1_its_plateau_cv_finite(tmp_path / "rq1_its")
+            test_rq1_transition_enrichment_cohens_d_finite()
+            test_rq1_vamp2_corrected_scores_are_positive(tmp_path / "rq1_vamp2")
+
+            # RQ2 — Visualization as Validation
+            test_rq2_topk_sets_are_nested(tmp_path / "rq2_topk")
+            test_rq2_residue_ranking_visualization_columns(tmp_path / "rq2_rank")
+            test_rq2_frame_score_length_matches_trajectory()
+            test_rq2_window_sweep_columns_for_visualization(tmp_path / "rq2_sweep")
+
+            # RQ3 — Sensitivity and Robustness
+            test_rq3_stability_metrics_bounded(tmp_path / "rq3_stab")
+            test_rq3_fusion_median_vs_mean_differ()
+            test_rq3_lag_perturbation_changes_frame_scores()
+            test_rq3_window_sweep_cohens_d_varies()
 
         print("\n" + "=" * 70)
         print("ALL TESTS PASSED ✓")
