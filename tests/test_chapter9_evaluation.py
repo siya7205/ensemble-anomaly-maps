@@ -26,6 +26,10 @@ from experiments.chapter9_evaluation import (
     compute_transition_enrichment,
     compute_spatial_clustering,
     run_chapter9_evaluation,
+    compute_hotspot_slowmode_alignment_no_tica,
+    compute_vamp_comparison_corrected,
+    compute_transition_enrichment_window_sweep,
+    compute_ranking_stability_extended,
 )
 
 
@@ -198,6 +202,7 @@ def test_compute_transition_enrichment(tmp_path):
 def test_compute_spatial_clustering(tmp_path):
     """compute_spatial_clustering produces spatial_clustering.csv."""
     print("[TEST] compute_spatial_clustering...")
+    tmp_path.mkdir(parents=True, exist_ok=True)
     n_residues = 20
     pdb_path = tmp_path / "test_topology.pdb"
     _write_minimal_pdb(pdb_path, n_residues=n_residues)
@@ -220,6 +225,7 @@ def test_full_pipeline_end_to_end(tmp_path):
     print("[TEST] Full end-to-end pipeline...")
 
     # Write synthetic features
+    tmp_path.mkdir(parents=True, exist_ok=True)
     X = _make_features(n_frames=150)
     features_path = tmp_path / "features.npy"
     np.save(features_path, X)
@@ -263,7 +269,96 @@ def test_full_pipeline_end_to_end(tmp_path):
     df_vamp = pd.read_csv(out_dir / "vamp_comparison.csv")
     assert len(df_vamp) == 3
 
+    # Issue-specific outputs
+    assert (out_dir / "hotspot_slowmode_alignment_no_tica.csv").exists()
+    assert (out_dir / "vamp_comparison_corrected.csv").exists()
+    assert (out_dir / "transition_enrichment_window_sweep.csv").exists()
+    assert (out_dir / "ranking_stability_extended.csv").exists()
+
     print(f"  ✓ All {len(expected)} output files present")
+
+
+def test_hotspot_slowmode_alignment_no_tica(tmp_path):
+    """compute_hotspot_slowmode_alignment_no_tica: new ρ differs from old ρ."""
+    print("[TEST] hotspot_slowmode_alignment_no_tica...")
+    X = _make_features(n_frames=150)
+    msm, dtraj, Y, tica_model = _fit_pipeline(X, 5, 3, 6, 5)
+    frame_scores = _fused_frame_scores(msm, dtraj, Y, lag_msm=5)
+    fused = _residue_fused_scores(frame_scores, n_residues=25)
+
+    df = compute_hotspot_slowmode_alignment_no_tica(
+        fused, frame_scores, tica_model, n_residues=25, output_dir=tmp_path
+    )
+    assert (tmp_path / "hotspot_slowmode_alignment_no_tica.csv").exists()
+    assert set(df.columns) >= {"old_spearman_rho", "new_spearman_rho",
+                               "circularity_confirmed"}
+    old_rho = df["old_spearman_rho"].iloc[0]
+    new_rho = df["new_spearman_rho"].iloc[0]
+    assert -1.0 <= old_rho <= 1.0, "old_rho should be in [-1, 1]"
+    assert -1.0 <= new_rho <= 1.0, "new_rho should be in [-1, 1]"
+    print(f"  ✓ old_ρ={old_rho:.4f}  new_ρ={new_rho:.4f}  "
+          f"circularity={df['circularity_confirmed'].iloc[0]}")
+
+
+def test_compute_vamp_comparison_corrected(tmp_path):
+    """compute_vamp_comparison_corrected: tICA ≠ raw_features VAMP-2 score."""
+    print("[TEST] compute_vamp_comparison_corrected...")
+    X = _make_features(n_frames=150)
+    df = compute_vamp_comparison_corrected(X, lag_msm=5, dim_tica=3,
+                                           lag_tica=5, output_dir=tmp_path)
+    assert (tmp_path / "vamp_comparison_corrected.csv").exists()
+    assert len(df) == 3
+    assert set(df["model_type"]) == {"tICA", "PCA", "raw_features"}
+    score_tica = df.loc[df["model_type"] == "tICA", "vamp2_score"].iloc[0]
+    score_raw = df.loc[df["model_type"] == "raw_features", "vamp2_score"].iloc[0]
+    # After fix, raw_features uses all features (dim=7) so score differs from tICA (dim=3)
+    assert score_tica != score_raw, (
+        f"tICA ({score_tica:.4f}) and raw_features ({score_raw:.4f}) "
+        "should differ in corrected comparison"
+    )
+    print(f"  ✓ VAMP corrected: tICA={score_tica:.4f}  raw={score_raw:.4f}")
+
+
+def test_compute_transition_enrichment_window_sweep(tmp_path):
+    """compute_transition_enrichment_window_sweep: produces 3 windows."""
+    print("[TEST] compute_transition_enrichment_window_sweep...")
+    n_frames = 100
+    dtraj = np.array([0] * 30 + [1] * 40 + [0] * 30, dtype=np.int64)
+    frame_scores = np.random.default_rng(0).uniform(0, 1, n_frames)
+
+    df = compute_transition_enrichment_window_sweep(frame_scores, dtraj, tmp_path)
+    assert (tmp_path / "transition_enrichment_window_sweep.csv").exists()
+    assert set(df.columns) >= {"window_size", "mean_transition",
+                               "mean_stable", "cohens_d"}
+    assert set(df["window_size"].tolist()) == {3, 5, 10}
+    assert df["cohens_d"].notna().all(), "All Cohen's d should be finite"
+    print(f"  ✓ Window sweep rows: {len(df)}, windows: {df['window_size'].tolist()}")
+
+
+def test_compute_ranking_stability_extended(tmp_path):
+    """compute_ranking_stability_extended: produces top-10/20/30% Jaccard rows."""
+    print("[TEST] compute_ranking_stability_extended...")
+    X = _make_features(n_frames=150)
+    n_residues = 25
+    # Derive baseline ranks quickly
+    _, fused = compute_residue_ranking(
+        np.random.default_rng(0).uniform(0, 1, 150), n_residues, tmp_path
+    )
+    baseline_ranks = (pd.Series(fused)
+                      .rank(ascending=False, method="first")
+                      .values.astype(int))
+
+    df = compute_ranking_stability_extended(
+        X, lag_msm=5, dim_tica=3, n_clusters=6, lag_tica=5,
+        n_residues=n_residues, baseline_ranks=baseline_ranks,
+        output_dir=tmp_path
+    )
+    assert (tmp_path / "ranking_stability_extended.csv").exists()
+    assert set(df.columns) >= {"perturbation_type", "topk_percent", "jaccard_index"}
+    assert set(df["topk_percent"].unique()) == {10, 20, 30}
+    assert (df["jaccard_index"] >= 0).all() and (df["jaccard_index"] <= 1).all()
+    print(f"  ✓ Extended stability rows: {len(df)}, "
+          f"k% values: {sorted(df['topk_percent'].unique().tolist())}")
 
 
 def main():
@@ -286,6 +381,10 @@ def main():
             test_compute_residue_ranking(tmp_path / "rank")
             test_compute_transition_enrichment(tmp_path / "enrich")
             test_compute_spatial_clustering(tmp_path / "spatial")
+            test_hotspot_slowmode_alignment_no_tica(tmp_path / "no_tica")
+            test_compute_vamp_comparison_corrected(tmp_path / "vamp_corr")
+            test_compute_transition_enrichment_window_sweep(tmp_path / "sweep")
+            test_compute_ranking_stability_extended(tmp_path / "rank_ext")
             test_full_pipeline_end_to_end(tmp_path / "e2e")
 
         print("\n" + "=" * 70)
