@@ -1,0 +1,11 @@
+residue_id,anomaly_score,rmsf_value,tica_importance,category_label
+79,0.292453,15.013701,0.008612,high_rmsf_low_anomaly
+86,0.40566,14.902116,0.010093,high_rmsf_low_anomaly
+65,0.29717,14.902116,0.010093,high_rmsf_low_anomaly
+93,0.415094,14.681439,0.012922,high_rmsf_low_anomaly
+58,0.349057,14.681439,0.012922,high_rmsf_low_anomaly
+48,0.811321,0.017809,7.191615,high_anomaly_low_rmsf
+52,0.804245,0.013644,14.752193,high_anomaly_low_rmsf
+39,0.787736,0.018691,7.595728,high_anomaly_low_rmsf
+38,0.768868,0.012759,23.230723,high_anomaly_low_rmsf
+47,0.731132,0.017842,11.938168,high_anomaly_low_rmsf

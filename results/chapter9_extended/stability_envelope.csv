@@ -1,0 +1,17 @@
+perturbation_type,k_percent,jaccard_index
+lag_plus20pct,10,0.2
+lag_plus20pct,20,0.428571
+lag_plus20pct,30,0.5
+lag_plus20pct,40,0.538462
+lag_minus20pct,10,0.2
+lag_minus20pct,20,0.22449
+lag_minus20pct,30,0.384615
+lag_minus20pct,40,0.428571
+dim_plus2,10,0.2
+dim_plus2,20,0.333333
+dim_plus2,30,0.551724
+dim_plus2,40,0.538462
+dim_minus2,10,0.071429
+dim_minus2,20,0.22449
+dim_minus2,30,0.40625
+dim_minus2,40,0.481481

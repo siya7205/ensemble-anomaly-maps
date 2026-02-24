@@ -1,0 +1,10 @@
+k,pair_type,intersection_size,union_size,jaccard_index
+10,anomaly_vs_rmsf,1,19,0.052632
+10,anomaly_vs_tica,0,20,0.0
+10,rmsf_vs_tica,0,20,0.0
+20,anomaly_vs_rmsf,4,36,0.111111
+20,anomaly_vs_tica,3,37,0.081081
+20,rmsf_vs_tica,0,40,0.0
+30,anomaly_vs_rmsf,7,53,0.132075
+30,anomaly_vs_tica,8,52,0.153846
+30,rmsf_vs_tica,0,60,0.0
