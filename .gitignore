@@ -14,3 +14,6 @@ __pycache__/
 # Performance reports
 performance_*.json
 
+# Generated poster figures (run generate_poster_figures.py to recreate)
+poster_figures/
+
