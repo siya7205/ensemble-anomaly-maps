@@ -1,11 +1,19 @@
 # tools/run_msm_tica.py
 import numpy as np
 import argparse
+import logging
 from pathlib import Path
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from deeptime.decomposition import TICA  # modern TICA
 from deeptime.markov.msm import MaximumLikelihoodMSM  # modern MSM
+
+# Suppress deeptime's per-state-set verbose warnings (logged at WARNING level
+# via logging.getLogger(__file__) inside deeptime's MLMSM estimator).  We
+# target only that specific logger so other logging is not affected.
+import deeptime.markov.msm._maximum_likelihood_msm as _deeptime_mlmsm
+_deeptime_msm_log = logging.getLogger(_deeptime_mlmsm.__file__)
+_deeptime_msm_log.setLevel(logging.ERROR)
 
 # Import optimized utilities
 from utils import (
@@ -47,7 +55,9 @@ def estimate_transition_matrix(dtraj, lag, n_states=None, reversible=True):
     # Map back to original state indices
     original_active_states = count_model.states[lcs]
     
-    # Estimate MSM (it will use the connected submatrix internally)
+    # Estimate MSM (it will use the connected submatrix internally).
+    # (_deeptime_msm_log is already set to ERROR at module level to suppress
+    # the per-state-set "Skipping state set" warnings.)
     msm = MaximumLikelihoodMSM(reversible=reversible).fit_fetch(count_model)
     
     return msm.transition_matrix, msm.stationary_distribution, original_active_states, msm
@@ -86,6 +96,8 @@ def main(feat_path, out_dir, lag_tica, lag_msm, n_clusters, use_cache=True):
     tica = TICA(lagtime=lag_tica).fit(X).fetch_model()
     Y = tica.transform(X)  # [T, d]
     np.save(out / "tica_coords.npy", Y)
+    # Save eigenvectors (right singular vectors) for downstream metric computation
+    np.savez(out / "tica_model.npz", eigenvectors=tica.singular_vectors_right)
     print(f"  TICA output: shape={Y.shape}")
 
     # ---- KMeans clustering in TICA space

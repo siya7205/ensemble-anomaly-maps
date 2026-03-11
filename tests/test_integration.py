@@ -288,6 +288,87 @@ def test_integration():
     return True
 
 
+def test_tica_model_persistence():
+    """
+    Regression test: run_msm_tica must save tica_model.npz so that
+    compute_all_metrics.py can load real tICA importance scores instead
+    of falling back to uniform (0.5) scores.
+    """
+    import io
+    import contextlib
+    import tempfile
+    import warnings
+    from pathlib import Path
+
+    # Add tools to path for imports
+    tools_dir = Path(__file__).parent.parent / "tools"
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+
+    np.random.seed(0)
+    X = np.random.randn(150, 7)  # small synthetic trajectory
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        feat_path = tmp / "features.npy"
+        np.save(feat_path, X)
+        msm_dir = tmp / "msm"
+
+        # Run the MSM+TICA pipeline
+        from run_msm_tica import main as run_msm
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_msm(str(feat_path), str(msm_dir),
+                    lag_tica=5, lag_msm=5, n_clusters=10, use_cache=False)
+
+        # 1. tica_model.npz must exist
+        tica_npz = msm_dir / "tica_model.npz"
+        assert tica_npz.exists(), (
+            "tica_model.npz was not saved by run_msm_tica.py. "
+            "compute_all_metrics.py will fall back to uniform importance scores."
+        )
+
+        # 2. The file must contain the 'eigenvectors' key with valid shape
+        data = np.load(tica_npz)
+        assert "eigenvectors" in data.files, \
+            "tica_model.npz missing 'eigenvectors' key"
+        eigvecs = data["eigenvectors"]
+        assert eigvecs.ndim == 2, \
+            f"eigenvectors should be 2-D, got shape {eigvecs.shape}"
+        n_features, n_components = eigvecs.shape
+        assert n_features == X.shape[1], \
+            f"eigenvectors n_features ({n_features}) != feature dim ({X.shape[1]})"
+
+        # 3. load_msm_and_tica must return a non-None tICA model
+        parent_dir = Path(__file__).parent.parent
+        if str(parent_dir) not in sys.path:
+            sys.path.insert(0, str(parent_dir))
+        from tools.compute_all_metrics import load_msm_and_tica
+        _, _, _, tica_model, _, _ = load_msm_and_tica(msm_dir)
+        assert tica_model is not None, (
+            "load_msm_and_tica returned tica_model=None even though "
+            "tica_model.npz was saved correctly."
+        )
+
+        # 4. compute_tica_importance_scores must return non-uniform scores
+        from scoring.signals import compute_tica_importance_scores
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            importance = compute_tica_importance_scores(
+                tica_model=tica_model,
+                feature_names=None,
+                aggregate_by_residue=True
+            )
+
+        assert len(importance) > 0, "No residue importance scores returned"
+        vals = list(importance.values())
+        assert not all(v == 0.5 for v in vals), (
+            "All importance scores are 0.5 (uniform fallback). "
+            "tICA eigenvectors are not being used."
+        )
+
+    print("  ✓ test_tica_model_persistence passed")
+
+
 def main():
     """Run integration test."""
     try:
