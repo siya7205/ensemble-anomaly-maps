@@ -9,7 +9,7 @@ no trajectory file, this script:
 2. Adds missing hydrogens.
 3. Solvates the system in a TIP3P water box.
 4. Minimizes the potential energy.
-5. Runs a short NVT MD simulation (50 000–100 000 steps).
+5. Runs a short NVT MD simulation (50,000–100,000 steps).
 6. Saves the trajectory as data/{PDB_ID}/traj.xtc (mdtraj) or
    data/{PDB_ID}/traj.dcd (OpenMM native) when mdtraj is unavailable.
 
@@ -217,7 +217,7 @@ def main():
         "--steps",
         type=int,
         default=50_000,
-        help="Number of MD integration steps (50 000–100 000 recommended)",
+        help="Number of MD integration steps (50,000–100,000 recommended)",
     )
     parser.add_argument(
         "--step_size",

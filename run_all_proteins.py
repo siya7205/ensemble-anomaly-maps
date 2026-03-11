@@ -267,7 +267,7 @@ def compute_residue_scores(traj, frame_scores):
         if len(ca_idx) == 0:
             return {}
 
-        # RMSF of CA atoms (one per residue after Cα selection)
+        # RMSF of CA atoms (one per residue, selected via "name CA")
         ca_traj = traj.atom_slice(ca_idx)
         ca_traj = ca_traj.superpose(ca_traj)
         mean_xyz = ca_traj.xyz.mean(axis=0)
