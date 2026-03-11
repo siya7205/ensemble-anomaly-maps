@@ -46,13 +46,16 @@ Dependencies
 import argparse
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -231,25 +234,26 @@ def generate_toy_trajectory(
     simulation.minimizeEnergy(maxIterations=500)
 
     # Collect frames into a DCD temp file then convert to XTC with MDTraj
-    import tempfile
-    tmp_dcd = tempfile.NamedTemporaryFile(suffix=".dcd", delete=False)
-    tmp_dcd.close()
-    dcd_path = Path(tmp_dcd.name)
+    tmp_fd, tmp_dcd_name = tempfile.mkstemp(suffix=".dcd")
+    os.close(tmp_fd)
+    dcd_path = Path(tmp_dcd_name)
 
-    dcd_reporter = omm_app.DCDReporter(str(dcd_path), steps_per_frame)
-    simulation.reporters.append(dcd_reporter)
+    try:
+        dcd_reporter = omm_app.DCDReporter(str(dcd_path), steps_per_frame)
+        simulation.reporters.append(dcd_reporter)
 
-    log.info("[%s] Integrating %d steps …", pdb_id, n_frames * steps_per_frame)
-    simulation.step(n_frames * steps_per_frame)
+        log.info("[%s] Integrating %d steps …", pdb_id, n_frames * steps_per_frame)
+        simulation.step(n_frames * steps_per_frame)
 
-    # Flush reporter
-    simulation.reporters.clear()
+        # Flush reporter
+        simulation.reporters.clear()
 
-    # Convert DCD → XTC using MDTraj (preserves topology properly)
-    log.info("[%s] Converting DCD → XTC …", pdb_id)
-    traj = md.load(str(dcd_path), top=str(pdb_path))
-    traj.save_xtc(str(xtc_path))
-    dcd_path.unlink(missing_ok=True)
+        # Convert DCD → XTC using MDTraj (preserves topology properly)
+        log.info("[%s] Converting DCD → XTC …", pdb_id)
+        traj = md.load(str(dcd_path), top=str(pdb_path))
+        traj.save_xtc(str(xtc_path))
+    finally:
+        dcd_path.unlink(missing_ok=True)
 
     log.info("[%s] traj.xtc written (%d frames).", pdb_id, len(traj))
     return xtc_path
@@ -259,7 +263,6 @@ def _best_openmm_platform():
     """Return the fastest OpenMM Platform available (CUDA > OpenCL > CPU)."""
     try:
         import openmm as omm
-        from openmm import app as omm_app
 
         for name in ("CUDA", "OpenCL", "CPU"):
             try:
@@ -392,8 +395,6 @@ def run_pipeline(
         return False
 
     # Save frame scores
-    import pandas as pd
-
     scores_df = pd.DataFrame(
         {
             "frame": np.arange(len(frame_scores)),
