@@ -1,0 +1,121 @@
+{
+  "config": {
+    "topology": "data/raw_trajectory/align_topol.pdb",
+    "trajectory": "data/raw_trajectory/trajectory_0.xtc",
+    "scores_csv": "results/raw_traj/frame_scores_dynamic.csv",
+    "top_pct": 5.0,
+    "bg_mode": "random",
+    "seed": 42,
+    "ref_frame": 0,
+    "cutoff_nm": 0.8,
+    "top_k_disp": 10,
+    "top_k_hotspot": 10,
+    "window": 2,
+    "stride": 1,
+    "n_traj_frames": 213,
+    "n_score_rows": 213
+  },
+  "n_top_anomaly": 11,
+  "n_background": 11,
+  "metrics": {
+    "score_dynamic": {
+      "top_anomaly_mean": 83.83361921097772,
+      "top_anomaly_std": 4.838486520673402,
+      "background_mean": 53.17324185248713,
+      "background_std": 10.530793031112994,
+      "cohens_d": 3.741456130425722,
+      "mannwhitney_pvalue": 8.001419985271315e-05,
+      "mannwhitney_statistic": 121.0
+    },
+    "mean_residue_displacement": {
+      "top_anomaly_mean": 2.4693165475671943,
+      "top_anomaly_std": 1.6629133848761304,
+      "background_mean": 2.8010852336883545,
+      "background_std": 1.1339630620593113,
+      "cohens_d": -0.23311008344121556,
+      "mannwhitney_pvalue": 0.2934238832742103,
+      "mannwhitney_statistic": 44.0
+    },
+    "max_residue_displacement": {
+      "top_anomaly_mean": 6.563133304769343,
+      "top_anomaly_std": 3.812158854435386,
+      "background_mean": 7.739577900279652,
+      "background_std": 2.348339094419792,
+      "cohens_d": -0.3715857543891101,
+      "mannwhitney_pvalue": 0.26429152373398135,
+      "mannwhitney_statistic": 43.0
+    },
+    "topk_residue_displacement": {
+      "top_anomaly_mean": 6.038002686067061,
+      "top_anomaly_std": 3.711067815808686,
+      "background_mean": 7.155452945015647,
+      "background_std": 2.3035494759736173,
+      "cohens_d": -0.3618033861303069,
+      "mannwhitney_pvalue": 0.0877681118303241,
+      "mannwhitney_statistic": 34.0
+    },
+    "hotspot_local_rmsd": {
+      "top_anomaly_mean": 2.874570283022794,
+      "top_anomaly_std": 1.7321514317767426,
+      "background_mean": 3.39008827642961,
+      "background_std": 1.0365129476017871,
+      "cohens_d": -0.36116910882966285,
+      "mannwhitney_pvalue": 0.06597105309665713,
+      "mannwhitney_statistic": 32.0
+    },
+    "contact_change": {
+      "top_anomaly_mean": 0.0072239170225747405,
+      "top_anomaly_std": 0.002993710816912727,
+      "background_mean": 0.007565588773642465,
+      "background_std": 0.0011035147323130083,
+      "cohens_d": -0.15144297489775746,
+      "mannwhitney_pvalue": 0.6934239947171621,
+      "mannwhitney_statistic": 67.0
+    },
+    "dihedral_change": {
+      "top_anomaly_mean": 17.360608621077105,
+      "top_anomaly_std": 6.093163725470877,
+      "background_mean": 19.625723231922496,
+      "background_std": 1.482312914709631,
+      "cohens_d": -0.5108306076391451,
+      "mannwhitney_pvalue": 0.6457638203049723,
+      "mannwhitney_statistic": 53.0
+    },
+    "local_persistence_score": {
+      "top_anomaly_mean": 76.89251000571755,
+      "top_anomaly_std": 6.0290132581229905,
+      "background_mean": 52.71012006861064,
+      "background_std": 10.03678628196627,
+      "cohens_d": 2.920905719564548,
+      "mannwhitney_pvalue": 0.00013977242646358396,
+      "mannwhitney_statistic": 119.0
+    },
+    "rarity_score": {
+      "top_anomaly_mean": 59.3910806174957,
+      "top_anomaly_std": 27.69189700811571,
+      "background_mean": 62.564322469982855,
+      "background_std": 23.504838362642076,
+      "cohens_d": -0.12355016538784433,
+      "mannwhitney_pvalue": 0.792812616632073,
+      "mannwhitney_statistic": 56.0
+    },
+    "transition_surprise": {
+      "top_anomaly_mean": 68.78216123499142,
+      "top_anomaly_std": 33.51966459884779,
+      "background_mean": 44.682675814751285,
+      "background_std": 28.786797854843503,
+      "cohens_d": 0.771356801757727,
+      "mannwhitney_pvalue": 0.056873036034794405,
+      "mannwhitney_statistic": 90.0
+    },
+    "slow_space_isolation": {
+      "top_anomaly_mean": 52.35849056603774,
+      "top_anomaly_std": 32.88179093588577,
+      "background_mean": 57.67581475128645,
+      "background_std": 30.253535071938423,
+      "cohens_d": -0.16829636039761658,
+      "mannwhitney_pvalue": 0.8438314252467704,
+      "mannwhitney_statistic": 57.0
+    }
+  }
+}
