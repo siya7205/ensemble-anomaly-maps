@@ -95,6 +95,33 @@ def _export_for_asvs(
         # consecutive integers (str) for the ASVS format.
         residue_scores["dynamic"] = {str(i): v for i, (_, v) in enumerate(raw.items())}
 
+    # ── Compute & save RMSF per-residue (needed for rmsf_residue.json) ─
+    # The core pipeline blends RMSF into the combined score but doesn't save
+    # it separately.  Recompute it here so the ASVS exporter can populate
+    # rmsf_residue.json with real values.
+    rmsf_json_path = results_dir / "residue_scores_rmsf.json"
+    if not rmsf_json_path.exists():
+        try:
+            import mdtraj as md
+
+            traj = md.load(str(trajectory_path), top=str(topology_path))
+            ca_idx = traj.topology.select("name CA")
+            if len(ca_idx) > 0:
+                ca_traj = traj.atom_slice(ca_idx)
+                ca_traj = ca_traj.superpose(ca_traj)
+                mean_xyz = ca_traj.xyz.mean(axis=0)
+                rmsf = np.sqrt(((ca_traj.xyz - mean_xyz) ** 2).sum(axis=-1).mean(axis=0))
+                rmsf_dict = {str(i): round(float(v), 6) for i, v in enumerate(rmsf)}
+                with open(rmsf_json_path, "w") as fh:
+                    json.dump(rmsf_dict, fh)
+                residue_scores["rmsf"] = rmsf_dict
+                log.info("[export] Computed RMSF for %d CA atoms → %s", len(rmsf), rmsf_json_path)
+        except Exception as exc:
+            log.warning("[export] RMSF computation skipped: %s", exc)
+    else:
+        with open(rmsf_json_path) as fh:
+            residue_scores["rmsf"] = json.load(fh)
+
     # ── Write ASVS JSON files ─────────────────────────────────────────
     hotspots_data = create_hotspots_residue_json(frame_scores_df, residue_scores, n_residues)
     with open(exports_dir / "hotspots_residue.json", "w") as fh:
