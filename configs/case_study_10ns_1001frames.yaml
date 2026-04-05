@@ -1,0 +1,26 @@
+# Case Study Pipeline Configuration
+# Run: python run_case_study.py
+
+case_study:
+  name: case_study_10ns_1001frames
+  description: "10 ns MD trajectory with 1001 frames"
+
+inputs:
+  topology:   data/case_study_10ns_1001frames/input/md.gro
+  trajectory: data/case_study_10ns_1001frames/input/md.xtc
+
+outputs:
+  artifacts: artifacts/case_study_10ns_1001frames
+  results:   results/case_study_10ns_1001frames
+  exports:   exports/case_study_10ns_1001frames
+  metadata:  outputs/case_study_10ns_1001frames
+
+pipeline:
+  stride:      1    # load every frame (use 2 or 5 to sub-sample)
+  lag_tica:    10   # tICA lag time in frames
+  dim_tica:    5    # number of tICA components to keep
+  n_clusters:  20   # KMeans clusters for conformational states
+  lag_msm:     10   # MSM lag time in frames
+  k_neighbors: 10   # k for local-density anomaly signal
+  window:      5    # smoothing window size (frames)
+  seed:        42   # global random seed

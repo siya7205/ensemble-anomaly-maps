@@ -4,6 +4,7 @@ outputs/*
 !outputs/summary/
 *.xtc
 *.pdb
+*.gro
 __pycache__/
 *.pyc
 
@@ -13,4 +14,8 @@ __pycache__/
 
 # Performance reports
 performance_*.json
+
+# Large per-frame residue JSON exports (>100 MB, regenerate with run_case_study.py)
+exports/**/hotspots_residue.json
+exports/**/anomaly_residue.json
 
