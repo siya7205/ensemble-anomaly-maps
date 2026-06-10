@@ -1,0 +1,22 @@
+input:
+  topology: topology.pdb
+  trajectory: trajectory.xtc
+
+output:
+  artifacts_dir: artifacts
+  results_dir: results
+
+pipeline:
+  stride: 1
+  lag_tica: 10
+  dim_tica: 5
+  n_clusters: 20
+  lag_msm: 10
+  k_neighbors: 10
+  window: 5
+  seed: 42
+
+normalization:
+  method: percentile
+  low_percentile: 0.05
+  high_percentile: 0.95
