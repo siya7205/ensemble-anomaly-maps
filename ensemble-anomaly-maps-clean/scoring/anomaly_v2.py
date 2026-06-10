@@ -19,6 +19,8 @@ def rank_normalize(values):
     values = np.asarray(values, dtype=np.float64)
     if len(values) == 0:
         return values
+    if len(values) == 1:
+        return np.zeros_like(values)
     if np.all(values == values[0]):
         return np.zeros_like(values)
     ranks = np.argsort(np.argsort(values))

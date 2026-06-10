@@ -9,6 +9,7 @@ Project: Ensemble Anomaly Maps
 
 import numpy as np
 import mdtraj as md
+import warnings
 
 
 # ------------------------------
@@ -36,6 +37,13 @@ def compute_features(topology_path, trajectory_path, stride=1, reference_frame=0
         _, phi = md.compute_phi(traj)
         _, psi = md.compute_psi(traj)
     except (ValueError, RuntimeError, KeyError):
+        warnings.warn(
+            "Backbone dihedrals could not be computed (possible causes: missing protein backbone atoms, "
+            "insufficient residues, or malformed topology); substituting zero-valued phi/psi features. "
+            "This can reduce downstream tICA/MSM signal quality.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         phi = np.zeros((n_frames, 1))
         psi = np.zeros((n_frames, 1))
 

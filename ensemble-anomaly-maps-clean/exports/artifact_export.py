@@ -40,6 +40,8 @@ def export_metric_artifacts(results_dir, frame_scores, signal_components, dynami
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    # Keep both column names for compatibility with existing consumers.
+    # Planned cleanup: deprecate `score` after all integrations read `score_dynamic`.
     frame_df = pd.DataFrame({"frame": np.arange(len(frame_scores)), "score": frame_scores, "score_dynamic": frame_scores})
     for signal_name, signal_values in signal_components.items():
         frame_df[f"component_{signal_name}"] = signal_values

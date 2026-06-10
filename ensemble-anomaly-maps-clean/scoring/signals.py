@@ -100,7 +100,7 @@ def aggregate_frame_to_residue(frame_scores, rmsf_scores):
         return {}
 
     frame_scores = np.asarray(frame_scores, dtype=np.float64)
-    mean_frame_score = frame_scores.mean() if len(frame_scores) else 0.0
+    mean_frame_score = frame_scores.mean() if len(frame_scores) > 0 else 0.0
     normalized_rmsf = normalize_scores(rmsf_scores, method="rank")
 
     residue_scores = {}

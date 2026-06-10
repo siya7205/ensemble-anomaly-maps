@@ -41,7 +41,7 @@ def load_config(config_path):
 # ------------------------------
 def compute_dynamic_scores(msm_model, dtraj, tica_coords, lag_msm, k_neighbors, window):
     rarity, surprise = compute_kinetic_signals(msm_model, dtraj, lag_msm)
-    density = compute_local_density_signal(tica_coords, k=min(k_neighbors, len(tica_coords) - 1))
+    density = compute_local_density_signal(tica_coords, k=k_neighbors)
 
     signals = {
         "rarity": rarity,

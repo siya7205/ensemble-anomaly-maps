@@ -14,11 +14,16 @@ from deeptime.clustering import KMeans
 from deeptime.decomposition import TICA
 from deeptime.markov.msm import MaximumLikelihoodMSM
 
+MIN_FRAMES_FOR_MSM = 4
+
 
 # ------------------------------
 # Run TICA Projection
 # ------------------------------
 def run_tica(feature_matrix, lag=10, dim=5):
+    if len(feature_matrix) < MIN_FRAMES_FOR_MSM:
+        raise ValueError(f"At least {MIN_FRAMES_FOR_MSM} frames are required for stable tICA estimation.")
+    # Keep lag below one quarter of trajectory length for stable covariance estimates.
     lag = min(lag, len(feature_matrix) // 4)
     lag = max(lag, 1)
     tica_model = TICA(lagtime=lag, dim=dim).fit(feature_matrix).fetch_model()
@@ -30,6 +35,9 @@ def run_tica(feature_matrix, lag=10, dim=5):
 # Cluster TICA States
 # ------------------------------
 def cluster_states(tica_coords, n_clusters=20, seed=42):
+    if len(tica_coords) < MIN_FRAMES_FOR_MSM:
+        raise ValueError(f"At least {MIN_FRAMES_FOR_MSM} frames are required for meaningful clustering.")
+    # Prevent over-clustering by capping clusters to half the number of frames.
     n_clusters = min(n_clusters, len(tica_coords) // 2)
     n_clusters = max(n_clusters, 2)
     kmeans_model = (
